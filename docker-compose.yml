@@ -1,0 +1,52 @@
+# Development stack: PostgreSQL, Mosquitto and the API.
+#   docker compose up --build
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: myiot
+      POSTGRES_PASSWORD: myiot
+      POSTGRES_DB: myiot
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myiot -d myiot"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  backend:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+    environment:
+      HTTP_PORT: "8080"
+      DATABASE_URL: postgres://myiot:myiot@postgres:5432/myiot?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+      JWT_TTL: 24h
+      CORS_ALLOWED_ORIGINS: "*"
+      RUN_MIGRATIONS: "true"
+      RUN_SEEDS: "true"
+      MQTT_ENABLED: "true"
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_CLIENT_ID: myiot-backend
+      MQTT_QOS: "1"
+      MQTT_COMMAND_TIMEOUT: 5s
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+
+volumes:
+  postgres-data:

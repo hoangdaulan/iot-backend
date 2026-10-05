@@ -139,6 +139,10 @@ type PageResponse[T any] struct {
 	TotalPages    int   `json:"totalPages"`
 }
 
+// DeviceActionHistoryPage is the concrete page type for the control-history endpoint (used by the
+// Swagger docs, which cannot resolve generic instantiations).
+type DeviceActionHistoryPage = PageResponse[DeviceActionHistoryItem]
+
 // TotalPages returns the number of pages of size needed for total rows.
 func TotalPages(total int64, size int) int {
 	if size <= 0 {

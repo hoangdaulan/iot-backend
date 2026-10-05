@@ -1,3 +1,12 @@
+// @title MyIoT API
+// @version 1.0
+// @description REST API for the MyIoT sensors and devices.
+// @BasePath /api
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by the access token.
+
 // Command server runs the MyIoT REST API and MQTT bridge.
 package main
 

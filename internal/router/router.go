@@ -6,7 +6,10 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
+	_ "iot-backend/docs"
 	"iot-backend/internal/dto"
 	"iot-backend/internal/handler"
 	"iot-backend/internal/middleware"
@@ -29,6 +32,8 @@ func New(d Deps) *gin.Engine {
 		c.JSON(http.StatusNotFound, dto.ErrorResponse{Message: "Not found"})
 	})
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
+
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	auth := handler.NewAuthHandler(d.Auth, d.Logger)
 	sensors := handler.NewSensorHandler(d.Sensors, d.Logger)

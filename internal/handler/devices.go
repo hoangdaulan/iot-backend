@@ -25,6 +25,20 @@ func NewDeviceHandler(devices *service.DeviceService, logger *slog.Logger) *Devi
 
 // Command handles POST /api/devices/:id/command. The response body is always a
 // DeviceCommandResult: 200 for SUCCESS and FAILED, 504 for TIMEOUT.
+// @Summary Send a command to a device
+// @Description Always returns a DeviceCommandResult: 200 for SUCCESS and FAILED, 504 for TIMEOUT.
+// @Tags Devices
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body dto.DeviceCommandRequest true "Request body"
+// @Param id path int true "Device ID"
+// @Success 200 {object} dto.DeviceCommandResult
+// @Failure 400 {object} dto.ErrorResponse
+// @Failure 401 {object} dto.ErrorResponse
+// @Failure 404 {object} dto.ErrorResponse
+// @Failure 504 {object} dto.ErrorResponse
+// @Router /devices/{id}/command [post]
 func (h *DeviceHandler) Command(c *gin.Context) {
 	deviceID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -52,6 +66,19 @@ func (h *DeviceHandler) Command(c *gin.Context) {
 }
 
 // History handles GET /api/devices/control-history?deviceId=&from=&to=&page=&size=.
+// @Summary Device control history
+// @Tags Devices
+// @Produce json
+// @Security BearerAuth
+// @Param deviceId query int false "Device ID"
+// @Param from query string false "ISO-8601 start time"
+// @Param to query string false "ISO-8601 end time"
+// @Param page query int false "0-based page"
+// @Param size query int false "Page size"
+// @Success 200 {object} dto.DeviceActionHistoryPage
+// @Failure 400 {object} dto.ErrorResponse
+// @Failure 401 {object} dto.ErrorResponse
+// @Router /devices/control-history [get]
 func (h *DeviceHandler) History(c *gin.Context) {
 	var q service.ActionHistoryQuery
 	var err error

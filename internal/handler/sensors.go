@@ -23,6 +23,13 @@ func NewSensorHandler(sensors *service.SensorService, logger *slog.Logger) *Sens
 }
 
 // List handles GET /api/sensors.
+// @Summary List sensors
+// @Tags Sensors
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} []dto.Sensor
+// @Failure 401 {object} dto.ErrorResponse
+// @Router /sensors [get]
 func (h *SensorHandler) List(c *gin.Context) {
 	sensors, err := h.sensors.Sensors(c.Request.Context())
 	if err != nil {
@@ -37,6 +44,13 @@ func (h *SensorHandler) List(c *gin.Context) {
 }
 
 // Latest handles GET /api/sensor-data/latest.
+// @Summary Latest reading per sensor type
+// @Tags Sensors
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} dto.LatestSensorDataResponse
+// @Failure 401 {object} dto.ErrorResponse
+// @Router /sensor-data/latest [get]
 func (h *SensorHandler) Latest(c *gin.Context) {
 	readings, status, err := h.sensors.Latest(c.Request.Context())
 	if err != nil {
@@ -51,6 +65,19 @@ func (h *SensorHandler) Latest(c *gin.Context) {
 }
 
 // History handles GET /api/sensor-data/history?type=&timeRange=&value=&page=&size=.
+// @Summary Sensor reading history
+// @Tags Sensors
+// @Produce json
+// @Security BearerAuth
+// @Param type query string false "Sensor type"
+// @Param timeRange query string false "ISO-8601 interval <from>/<to>; '..' or empty means open-ended"
+// @Param value query number false "Exact value filter"
+// @Param page query int false "0-based page"
+// @Param size query int false "Page size"
+// @Success 200 {object} dto.SensorHistoryResponse
+// @Failure 400 {object} dto.ErrorResponse
+// @Failure 401 {object} dto.ErrorResponse
+// @Router /sensor-data/history [get]
 func (h *SensorHandler) History(c *gin.Context) {
 	q, err := parseSensorHistoryQuery(c)
 	if err != nil {

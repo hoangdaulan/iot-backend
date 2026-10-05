@@ -25,13 +25,13 @@ type Store struct {
 	clockFunc func() time.Time
 }
 
-// NewStore returns a store seeded like the initial migration: device 1 (ESP32 LED, OFF) and the
+// NewStore returns a store seeded like the initial migration: device 1 (ESP32, OFF) and the
 // three sensors.
 func NewStore() *Store {
 	now := time.Now().UTC()
 	return &Store{
 		devices: map[int64]*model.Device{
-			model.DeviceID: {ID: model.DeviceID, Name: "ESP32", Type: "LED", Status: model.DeviceOff,
+			model.DeviceID: {ID: model.DeviceID, Name: "ESP32", Status: model.DeviceOff,
 				CreatedAt: now, UpdatedAt: now},
 		},
 		sensors: []model.Sensor{

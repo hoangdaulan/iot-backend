@@ -92,7 +92,7 @@ func postgresHarness(t *testing.T, pool *pgxpool.Pool, publisher service.Publish
 func TestPostgresSchemaAndSeeds(t *testing.T) {
 	pool := freshDatabase(t)
 
-	if n := count(t, pool, `SELECT count(*) FROM devices WHERE id = 1 AND name = 'ESP32' AND type = 'LED' AND status = 'OFF'`); n != 1 {
+	if n := count(t, pool, `SELECT count(*) FROM devices WHERE id = 1 AND name = 'ESP32' AND status = 'OFF'`); n != 1 {
 		t.Errorf("device rows = %d", n)
 	}
 	if n := count(t, pool, `SELECT count(*) FROM devices`); n != 1 {

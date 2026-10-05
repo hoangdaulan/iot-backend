@@ -27,6 +27,16 @@ func TestParseSensorPayload(t *testing.T) {
 		}
 	})
 
+	t.Run("lux is an alias of light", func(t *testing.T) {
+		p, err := ParseSensorPayload([]byte(`{"temperature":27.3,"humidity":55.0,"lux":2.5}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(p.Values) != 3 || p.Values["light"] != 2.5 {
+			t.Fatalf("values = %v", p.Values)
+		}
+	})
+
 	t.Run("partial payload with timestamp", func(t *testing.T) {
 		p, err := ParseSensorPayload([]byte(`{"light": 0, "timestamp": "2026-10-05T08:00:00+07:00"}`))
 		if err != nil {

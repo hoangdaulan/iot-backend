@@ -16,7 +16,7 @@ import (
 //
 //	{"temperature": 28.7, "humidity": 60.5, "light": 420, "timestamp": "2026-10-05T08:00:00Z"}
 //
-// Every field is optional; "timestamp" defaults to the time the message is received.
+// "lux" is accepted as an alias of "light". Every field is optional; "timestamp" defaults to the time the message is received.
 type SensorPayload struct {
 	Values    map[model.SensorType]float64
 	Timestamp *time.Time
@@ -38,10 +38,15 @@ func ParseSensorPayload(raw []byte) (SensorPayload, error) {
 		Temperature *float64 `json:"temperature"`
 		Humidity    *float64 `json:"humidity"`
 		Light       *float64 `json:"light"`
+		Lux         *float64 `json:"lux"`
 		Timestamp   *string  `json:"timestamp"`
 	}
 	if err := json.Unmarshal(bytes.TrimSpace(raw), &msg); err != nil {
 		return SensorPayload{}, fmt.Errorf("invalid sensor payload: %w", err)
+	}
+
+	if msg.Light == nil {
+		msg.Light = msg.Lux
 	}
 
 	p := SensorPayload{Values: map[model.SensorType]float64{}}

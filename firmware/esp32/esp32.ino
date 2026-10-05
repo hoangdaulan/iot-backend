@@ -3,10 +3,10 @@
 // Publishes {"temperature":27.3,"humidity":55.0,"lux":2.5} to TOPIC_SENSOR (fields whose sensor
 // failed are left out) and executes LED commands from TOPIC_CONTROL:
 //
-//   backend -> ESP32   {"actionId": 42, "command": "ON"}      ("ON" or "OFF")
-//   ESP32 -> backend   {"actionId": 42, "status": "SUCCESS", "state": "ON", "message": "LED on"}
+//   backend -> ESP32   {"actionId": 42, "deviceId": 2, "command": "ON"}   ("ON" or "OFF")
+//   ESP32 -> backend   {"actionId": 42, "status": "SUCCESS", "state": "ON", "message": "LED 2 on"}
 //
-// The backend models one LED device, so a command switches all LEDs in LED_PINS together.
+// deviceId N (1..LED_COUNT) is the backend's "LED N" device and drives LED_PINS[N - 1].
 //
 // Libraries: PubSubClient, BH1750, DHT sensor library, ArduinoJson (v7).
 
@@ -47,21 +47,17 @@ unsigned long lastSensorTime = 0;
 unsigned long lastWifiTry = 0;
 unsigned long lastMqttTry = 0;
 
-bool ledsOn() {
-  return digitalRead(LED_PINS[0]) == HIGH;
+// deviceId is 1-based; returns -1 when it does not match an LED.
+int ledPin(long deviceId) {
+  if (deviceId < 1 || deviceId > (long)LED_COUNT) return -1;
+  return LED_PINS[deviceId - 1];
 }
 
-void setLeds(bool on) {
-  for (size_t i = 0; i < LED_COUNT; i++) {
-    digitalWrite(LED_PINS[i], on ? HIGH : LOW);
-  }
-}
-
-void publishResponse(long actionId, const char* status, const char* message) {
+void publishResponse(long actionId, int pin, const char* status, const char* message) {
   JsonDocument doc;
   doc["actionId"] = actionId;
   doc["status"] = status;
-  doc["state"] = ledsOn() ? "ON" : "OFF";
+  if (pin >= 0) doc["state"] = digitalRead(pin) == HIGH ? "ON" : "OFF";
   doc["message"] = message;
 
   char buf[200];
@@ -80,19 +76,29 @@ void handleControl(const byte* payload, unsigned int length) {
   if (err) {
     Serial.print("Bad control JSON: ");
     Serial.println(err.c_str());
-    publishResponse(actionId, "FAILED", "Invalid control message");
+    publishResponse(actionId, -1, "FAILED", "Invalid control message");
+    return;
+  }
+
+  long deviceId = doc["deviceId"] | 0L;
+  int pin = ledPin(deviceId);
+  if (pin < 0) {
+    publishResponse(actionId, -1, "FAILED", "Unknown device");
     return;
   }
 
   const char* command = doc["command"] | "";
+  char message[24];
   if (strcmp(command, "ON") == 0) {
-    setLeds(true);
-    publishResponse(actionId, "SUCCESS", "LED on");
+    digitalWrite(pin, HIGH);
+    snprintf(message, sizeof(message), "LED %ld on", deviceId);
+    publishResponse(actionId, pin, "SUCCESS", message);
   } else if (strcmp(command, "OFF") == 0) {
-    setLeds(false);
-    publishResponse(actionId, "SUCCESS", "LED off");
+    digitalWrite(pin, LOW);
+    snprintf(message, sizeof(message), "LED %ld off", deviceId);
+    publishResponse(actionId, pin, "SUCCESS", message);
   } else {
-    publishResponse(actionId, "FAILED", "Unknown command");
+    publishResponse(actionId, pin, "FAILED", "Unknown command");
   }
 }
 
@@ -166,7 +172,9 @@ void setup() {
   for (size_t i = 0; i < LED_COUNT; i++) {
     pinMode(LED_PINS[i], OUTPUT);
   }
-  setLeds(false);
+  for (size_t i = 0; i < LED_COUNT; i++) {
+    digitalWrite(LED_PINS[i], LOW);
+  }
 
   dht.begin();
 

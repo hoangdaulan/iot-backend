@@ -49,6 +49,8 @@ type SensorHistoryFilter struct {
 
 type DeviceRepository interface {
 	FindByID(ctx context.Context, id int64) (*model.Device, error)
+	// List returns all devices ordered by id.
+	List(ctx context.Context) ([]model.Device, error)
 	UpdateStatus(ctx context.Context, id int64, status model.DeviceStatus) error
 	// CreateAction inserts the action and sets its ID and timestamp.
 	CreateAction(ctx context.Context, a *model.DeviceAction) error

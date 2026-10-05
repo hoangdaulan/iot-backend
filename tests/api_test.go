@@ -305,7 +305,7 @@ func TestSensorLatest(t *testing.T) {
 
 	res := h.do(http.MethodGet, "/api/sensor-data/latest", token, nil)
 	expect(t, res, http.StatusOK, "")
-	if string(res.Body) != `{"data":{},"deviceStatus":"OFF"}` {
+	if string(res.Body) != `{"data":{},"deviceStatus":"OFF","devices":[{"id":1,"name":"LED 1","type":"LED","status":"OFF"},{"id":2,"name":"LED 2","type":"LED","status":"OFF"},{"id":3,"name":"LED 3","type":"LED","status":"OFF"}]}` {
 		t.Errorf("empty latest = %s", res.Body)
 	}
 
@@ -456,7 +456,7 @@ func TestDeviceCommand(t *testing.T) {
 	})
 
 	t.Run("unknown device", func(t *testing.T) {
-		expect(t, command("/api/devices/2/command", `{"command":"ON"}`), http.StatusNotFound, "Device not found")
+		expect(t, command("/api/devices/4/command", `{"command":"ON"}`), http.StatusNotFound, "Device not found")
 		expect(t, command("/api/devices/abc/command", `{"command":"ON"}`), http.StatusNotFound, "Device not found")
 	})
 	t.Run("invalid command", func(t *testing.T) {
@@ -487,7 +487,7 @@ func TestDeviceHistory(t *testing.T) {
 		t.Fatalf("page = %s", res.Body)
 	}
 	newest, oldest := page.Content[0], page.Content[1]
-	if newest["action"] != "TURN_OFF" || newest["result"] != "FAILED" || newest["deviceName"] != "ESP32" ||
+	if newest["action"] != "TURN_OFF" || newest["result"] != "FAILED" || newest["deviceName"] != "LED 1" ||
 		newest["message"] != "Device failed to turn off" {
 		t.Errorf("newest = %v", newest)
 	}

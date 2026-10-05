@@ -22,6 +22,7 @@ type Publisher interface {
 // ControlMessage is published on the device-control topic.
 type ControlMessage struct {
 	ActionID int64               `json:"actionId"`
+	DeviceID int64               `json:"deviceId"`
 	Command  model.DeviceCommand `json:"command"`
 }
 
@@ -48,7 +49,7 @@ type pendingCommand struct {
 }
 
 // DeviceService sends LED commands and serves the control history. Commands are serialized:
-// there is one LED, and one command waits for the ESP32 at a time.
+// one command waits for the ESP32 at a time.
 type DeviceService struct {
 	devices   repository.DeviceRepository
 	publisher Publisher
@@ -97,7 +98,7 @@ func (s *DeviceService) SendCommand(
 	defer s.setPending(nil)
 
 	result := &CommandResult{DeviceID: deviceID, Command: command}
-	payload, _ := json.Marshal(ControlMessage{ActionID: action.ID, Command: command})
+	payload, _ := json.Marshal(ControlMessage{ActionID: action.ID, DeviceID: deviceID, Command: command})
 	if err := s.publisher.PublishControl(ctx, payload); err != nil {
 		s.logger.Error("publish device command", "actionId", action.ID, "error", err)
 		result.Status, result.Message = model.ResultFailed, "Could not reach the MQTT broker"

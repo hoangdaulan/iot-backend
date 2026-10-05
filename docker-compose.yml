@@ -1,46 +1,23 @@
-# Development stack: PostgreSQL and the API. MQTT uses the broker running on the host
-# (it must listen on 0.0.0.0:1883).
-#   docker compose up --build
+# Dev backend on this machine. The database and MQTT broker run on the ESP32 machine (reached over
+# Tailscale at 100.93.53.111). MQTT is disabled here so readings are not ingested twice; the
+# backend on that machine owns the broker connection and migrations.
+#   docker compose up -d --build
 services:
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_USER: myiot
-      POSTGRES_PASSWORD: myiot
-      POSTGRES_DB: myiot
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U myiot -d myiot"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
-
   backend:
     build: .
-    depends_on:
-      postgres:
-        condition: service_healthy
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
       HTTP_PORT: "8080"
-      DATABASE_URL: postgres://myiot:myiot@postgres:5432/myiot?sslmode=disable
+      DATABASE_URL: postgres://myiot:myiot@100.93.53.111:5432/myiot?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
       JWT_TTL: 24h
       CORS_ALLOWED_ORIGINS: "*"
-      RUN_MIGRATIONS: "true"
-      RUN_SEEDS: "true"
-      MQTT_ENABLED: "true"
-      MQTT_BROKER: host.docker.internal
+      RUN_MIGRATIONS: "false"
+      RUN_SEEDS: "false"
+      MQTT_ENABLED: "false"
+      MQTT_BROKER: 100.93.53.111
       MQTT_PORT: "1883"
-      MQTT_CLIENT_ID: myiot-backend
+      MQTT_CLIENT_ID: myiot-backend-dev
       MQTT_QOS: "1"
       MQTT_COMMAND_TIMEOUT: 5s
     ports:
       - "${HTTP_PORT:-8080}:8080"
-
-volumes:
-  postgres-data:

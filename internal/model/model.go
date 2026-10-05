@@ -4,7 +4,7 @@ package model
 
 import "time"
 
-// DeviceID is the id of the system's single ESP32, created by the initial migration.
+// DeviceID is the id of the first LED device (LED 1); LED 2 and 3 have ids 2 and 3.
 const DeviceID int64 = 1
 
 type Role string
@@ -39,6 +39,7 @@ const (
 type Device struct {
 	ID        int64
 	Name      string
+	Type      string
 	Status    DeviceStatus
 	CreatedAt time.Time
 	UpdatedAt time.Time

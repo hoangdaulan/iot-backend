@@ -32,18 +32,18 @@ func (s *SensorService) Sensors(ctx context.Context) ([]model.Sensor, error) {
 	return s.sensors.List(ctx)
 }
 
-// Latest returns the newest reading per sensor and the LED status of the single device. The
+// Latest returns the newest reading per sensor and the current state of every device. The
 // values are the latest ones persisted from MQTT; the firmware has no on-demand read request.
-func (s *SensorService) Latest(ctx context.Context) ([]model.SensorReading, model.DeviceStatus, error) {
+func (s *SensorService) Latest(ctx context.Context) ([]model.SensorReading, []model.Device, error) {
 	readings, err := s.sensors.Latest(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
-	device, err := s.devices.FindByID(ctx, model.DeviceID)
+	devices, err := s.devices.List(ctx)
 	if err != nil {
-		return nil, "", fmt.Errorf("load device: %w", err)
+		return nil, nil, fmt.Errorf("load devices: %w", err)
 	}
-	return readings, device.Status, nil
+	return readings, devices, nil
 }
 
 type HistoryQuery struct {

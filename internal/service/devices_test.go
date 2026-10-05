@@ -90,7 +90,7 @@ func TestSendCommandSuccess(t *testing.T) {
 		*actions[0].UserID != 1 || actions[0].CompletedAt == nil {
 		t.Errorf("history = %+v", actions)
 	}
-	if len(esp.received) != 1 || esp.received[0] != (service.ControlMessage{ActionID: actions[0].ID, Command: model.CommandOn}) {
+	if len(esp.received) != 1 || esp.received[0] != (service.ControlMessage{ActionID: actions[0].ID, DeviceID: model.DeviceID, Command: model.CommandOn}) {
 		t.Errorf("published = %+v", esp.received)
 	}
 }
@@ -188,7 +188,7 @@ func TestSendCommandBrokerUnavailable(t *testing.T) {
 func TestSendCommandValidation(t *testing.T) {
 	svc, store := newDeviceService(t, &fakeESP32{}, time.Second)
 
-	_, err := svc.SendCommand(context.Background(), 1, 2, model.CommandOn)
+	_, err := svc.SendCommand(context.Background(), 1, 4, model.CommandOn)
 	if appErr, ok := apperr.As(err); !ok || appErr.Status != 404 || appErr.Message != "Device not found" {
 		t.Errorf("unknown device: %v", err)
 	}

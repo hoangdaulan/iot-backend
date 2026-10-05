@@ -25,14 +25,15 @@ type Store struct {
 	clockFunc func() time.Time
 }
 
-// NewStore returns a store seeded like the initial migration: device 1 (ESP32, OFF) and the
+// NewStore returns a store seeded like the initial migration: devices 1-3 (LED 1-3, OFF) and the
 // three sensors.
 func NewStore() *Store {
 	now := time.Now().UTC()
 	return &Store{
 		devices: map[int64]*model.Device{
-			model.DeviceID: {ID: model.DeviceID, Name: "ESP32", Status: model.DeviceOff,
-				CreatedAt: now, UpdatedAt: now},
+			1: {ID: 1, Name: "LED 1", Type: "LED", Status: model.DeviceOff, CreatedAt: now, UpdatedAt: now},
+			2: {ID: 2, Name: "LED 2", Type: "LED", Status: model.DeviceOff, CreatedAt: now, UpdatedAt: now},
+			3: {ID: 3, Name: "LED 3", Type: "LED", Status: model.DeviceOff, CreatedAt: now, UpdatedAt: now},
 		},
 		sensors: []model.Sensor{
 			{ID: 1, Name: "Temperature", Type: model.SensorTemperature, Unit: "°C", CreatedAt: now, UpdatedAt: now},
@@ -223,6 +224,16 @@ func (r *DeviceRepository) FindByID(_ context.Context, id int64) (*model.Device,
 	}
 	copied := *d
 	return &copied, nil
+}
+
+func (r *DeviceRepository) List(_ context.Context) ([]model.Device, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	out := make([]model.Device, 0, len(r.s.devices))
+	for id := int64(1); int(id) <= len(r.s.devices); id++ {
+		out = append(out, *r.s.devices[id])
+	}
+	return out, nil
 }
 
 func (r *DeviceRepository) UpdateStatus(_ context.Context, id int64, status model.DeviceStatus) error {

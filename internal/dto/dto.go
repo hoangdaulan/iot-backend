@@ -91,10 +91,20 @@ type SensorDataEntry struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// LatestSensorDataResponse is the newest measurement per sensor type plus the LED status.
+// DeviceSummary is a device and its current state.
+type DeviceSummary struct {
+	ID     int64              `json:"id"`
+	Name   string             `json:"name"`
+	Type   string             `json:"type"`
+	Status model.DeviceStatus `json:"status"`
+}
+
+// LatestSensorDataResponse is the newest measurement per sensor type plus the device states.
+// DeviceStatus is the status of device 1 (LED 1), kept for existing clients; use Devices.
 type LatestSensorDataResponse struct {
 	Data         map[model.SensorType]SensorDataEntry `json:"data"`
 	DeviceStatus model.DeviceStatus                   `json:"deviceStatus"`
+	Devices      []DeviceSummary                      `json:"devices"`
 }
 
 // SensorHistoryResponse keeps the report's grouped-by-type shape. Paging is 0-based and the

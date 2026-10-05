@@ -92,11 +92,11 @@ func postgresHarness(t *testing.T, pool *pgxpool.Pool, publisher service.Publish
 func TestPostgresSchemaAndSeeds(t *testing.T) {
 	pool := freshDatabase(t)
 
-	if n := count(t, pool, `SELECT count(*) FROM devices WHERE id = 1 AND name = 'ESP32' AND status = 'OFF'`); n != 1 {
+	if n := count(t, pool, `SELECT count(*) FROM devices WHERE id = 1 AND name = 'LED 1' AND type = 'LED' AND status = 'OFF'`); n != 1 {
 		t.Errorf("device rows = %d", n)
 	}
-	if n := count(t, pool, `SELECT count(*) FROM devices`); n != 1 {
-		t.Errorf("exactly one device expected, got %d", n)
+	if n := count(t, pool, `SELECT count(*) FROM devices WHERE type = 'LED'`); n != 3 {
+		t.Errorf("three LED devices expected, got %d", n)
 	}
 	if n := count(t, pool, `SELECT count(*) FROM sensors WHERE type IN ('temperature','humidity','light')`); n != 3 {
 		t.Errorf("sensor rows = %d", n)
@@ -204,7 +204,7 @@ func TestPostgresAPI(t *testing.T) {
 		if n := count(t, pool, `SELECT count(*) FROM device_actions WHERE result = 'PENDING'`); n != 0 {
 			t.Errorf("%d actions left PENDING", n)
 		}
-		expect(t, h.do(http.MethodPost, "/api/devices/2/command", token, `{"command":"ON"}`), http.StatusNotFound, "Device not found")
+		expect(t, h.do(http.MethodPost, "/api/devices/4/command", token, `{"command":"ON"}`), http.StatusNotFound, "Device not found")
 	})
 
 	t.Run("control history", func(t *testing.T) {
@@ -218,7 +218,7 @@ func TestPostgresAPI(t *testing.T) {
 			t.Fatalf("page = %+v", page)
 		}
 		newest := page.Content[0]
-		if newest["action"] != "TURN_OFF" || newest["result"] != "TIMEOUT" || newest["deviceName"] != "ESP32" {
+		if newest["action"] != "TURN_OFF" || newest["result"] != "TIMEOUT" || newest["deviceName"] != "LED 1" {
 			t.Errorf("newest = %v", newest)
 		}
 		if second := page.Content[1]; second["result"] != "SUCCESS" || second["status"] != "ON" {

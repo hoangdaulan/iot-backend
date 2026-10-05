@@ -22,9 +22,9 @@ func NewDeviceRepository(pool *pgxpool.Pool) *DeviceRepository {
 func (r *DeviceRepository) FindByID(ctx context.Context, id int64) (*model.Device, error) {
 	var d model.Device
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, name, status, created_at, updated_at
+		SELECT id, name, type, status, created_at, updated_at
 		FROM devices WHERE id = $1`, id,
-	).Scan(&d.ID, &d.Name, &d.Status, &d.CreatedAt, &d.UpdatedAt)
+	).Scan(&d.ID, &d.Name, &d.Type, &d.Status, &d.CreatedAt, &d.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, repository.ErrNotFound
 	}
@@ -32,6 +32,19 @@ func (r *DeviceRepository) FindByID(ctx context.Context, id int64) (*model.Devic
 		return nil, fmt.Errorf("find device: %w", err)
 	}
 	return &d, nil
+}
+
+func (r *DeviceRepository) List(ctx context.Context) ([]model.Device, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, name, type, status, created_at, updated_at FROM devices ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("list devices: %w", err)
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (model.Device, error) {
+		var d model.Device
+		err := row.Scan(&d.ID, &d.Name, &d.Type, &d.Status, &d.CreatedAt, &d.UpdatedAt)
+		return d, err
+	})
 }
 
 func (r *DeviceRepository) UpdateStatus(

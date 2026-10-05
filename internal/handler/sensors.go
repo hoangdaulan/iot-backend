@@ -52,7 +52,7 @@ func (h *SensorHandler) List(c *gin.Context) {
 // @Failure 401 {object} dto.ErrorResponse
 // @Router /sensor-data/latest [get]
 func (h *SensorHandler) Latest(c *gin.Context) {
-	readings, status, err := h.sensors.Latest(c.Request.Context())
+	readings, devices, err := h.sensors.Latest(c.Request.Context())
 	if err != nil {
 		respondError(c, h.logger, err)
 		return
@@ -61,7 +61,15 @@ func (h *SensorHandler) Latest(c *gin.Context) {
 	for _, r := range readings {
 		data[r.Type] = dto.SensorDataEntryFrom(r)
 	}
-	c.JSON(http.StatusOK, dto.LatestSensorDataResponse{Data: data, DeviceStatus: status})
+	summaries := make([]dto.DeviceSummary, 0, len(devices))
+	status := model.DeviceOff
+	for _, d := range devices {
+		summaries = append(summaries, dto.DeviceSummary{ID: d.ID, Name: d.Name, Type: d.Type, Status: d.Status})
+		if d.ID == model.DeviceID {
+			status = d.Status
+		}
+	}
+	c.JSON(http.StatusOK, dto.LatestSensorDataResponse{Data: data, DeviceStatus: status, Devices: summaries})
 }
 
 // History handles GET /api/sensor-data/history?type=&timeRange=&value=&page=&size=.

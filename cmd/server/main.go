@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
 	"iot-backend/internal/config"
 	"iot-backend/internal/database"
 	"iot-backend/internal/mqtt"

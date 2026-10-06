@@ -2,3 +2,4 @@
 /bin/
 /docs
 firmware/esp32/secrets.h
+docker-compose.yml

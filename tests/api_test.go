@@ -395,6 +395,61 @@ func TestSensorHistory(t *testing.T) {
 			t.Errorf("body = %+v", b)
 		}
 	})
+	t.Run("searches by filter and q", func(t *testing.T) {
+		cases := []struct {
+			query string
+			total int64
+		}{
+			{"?filter=all&q=whatever", 0},
+			{"?filter=all", 9},
+			{"?q=hum", 3},
+			{"?filter=all&q=hum", 3},
+			{"?filter=all&q=light", 3},
+			{"?filter=all&q=2", 3},
+			{"?filter=all&q=1", 3},
+			{"?filter=all&q=61", 1},
+			{"?filter=all&q=22", 1},
+			{"?filter=all&q=400", 3},
+			{"?filter=all&q=2026", 9},
+			{"?filter=all&q=2026/08/15", 3},
+			{"?filter=all&q=2026/08/15%2007&utcOffset=420", 3},
+			{"?filter=sensor&q=hum", 3},
+			{"?filter=sensor&q=3", 3},
+			{"?filter=sensor&q=", 9},
+			{"?filter=sensor&q=nothing", 0},
+			{"?filter=temperature", 3},
+			{"?filter=temperature&q=21", 1},
+			{"?filter=temperature&q=21.0", 1},
+			{"?filter=temperature&q=21.5", 0},
+			{"?filter=temperature&q=2", 0},
+			{"?filter=humidity&q=6", 0},
+			{"?filter=humidity&q=61", 1},
+			{"?filter=humidity&q=61.1", 0},
+			{"?filter=temperature&q=-21", 0},
+			{"?filter=humidity&q=60", 1},
+			{"?filter=light&q=400", 3},
+			{"?filter=time&q=2026", 9},
+			{"?filter=time&q=2026/08", 9},
+			{"?filter=time&q=2026/08/15", 3},
+			{"?filter=time&q=2026/08/15%2000", 3},
+			{"?filter=time&q=2026/08/15%2001", 0},
+			{"?filter=time&q=2026/08/15%2000:00:00", 3},
+			{"?filter=time&q=2026/08/15%2000:00:01", 0},
+			{"?filter=time&q=2026/08/15%2007&utcOffset=420", 3},
+			{"?filter=time&q=2026/08/15&utcOffset=420", 3},
+			{"?filter=time&q=2026/08/14&utcOffset=420", 3},
+			{"?filter=time&q=2026/08/15&utcOffset=-60", 3},
+			{"?filter=time&q=2026/08/16&utcOffset=-60", 0},
+			{"?filter=time&q=2026-08-15", 3},
+			{"?filter=time&q=", 9},
+			{"?filter=time&q=2026/08/14&timeRange=2026-08-14T12:00:00Z/..", 0},
+		}
+		for _, tc := range cases {
+			if b := get(tc.query); b.TotalElements != tc.total {
+				t.Errorf("%s: total = %d, want %d", tc.query, b.TotalElements, tc.total)
+			}
+		}
+	})
 	t.Run("pages", func(t *testing.T) {
 		b := get("?page=1&size=4")
 		count := 0
@@ -406,7 +461,8 @@ func TestSensorHistory(t *testing.T) {
 		}
 	})
 	for _, query := range []string{"?type=co2", "?size=5001", "?page=-1", "?page=x",
-		"?timeRange=yesterday", "?timeRange=2026-08-15T00:00:00Z/2026-08-14T00:00:00Z", "?value=abc"} {
+		"?timeRange=yesterday", "?filter=co2", "?filter=temperature&q=abc", "?filter=time&q=tomorrow",
+		"?filter=time&q=2026/13", "?filter=time&q=2026/02/30", "?filter=time&q=2026/08/15%2025", "?utcOffset=x", "?timeRange=2026-08-15T00:00:00Z/2026-08-14T00:00:00Z", "?value=abc"} {
 		t.Run("rejects "+query, func(t *testing.T) {
 			expect(t, h.do(http.MethodGet, "/api/sensor-data/history"+query, token, nil), http.StatusBadRequest, "")
 		})
@@ -414,6 +470,39 @@ func TestSensorHistory(t *testing.T) {
 }
 
 // ── Devices ──
+
+func TestSensorHistoryValueSearch(t *testing.T) {
+	h := newHarness(t)
+	token := h.login("admin")
+	at := time.Date(2026, 10, 6, 11, 0, 0, 0, time.UTC)
+	for i, temp := range []float64{28, 28.5, 28.99, 29, 27.99, -3.5, -3, -4} {
+		h.ingest(at.Add(time.Duration(i)*time.Minute), map[model.SensorType]float64{"temperature": temp})
+	}
+
+	for _, tc := range []struct {
+		query string
+		total int64
+	}{
+		{"28", 3},    // integer part 28: 28, 28.5, 28.99
+		{"28.5", 1},  // 28.5 up to 28.6
+		{"28.9", 1},  // 28.99
+		{"28.99", 1}, // exact to two decimals
+		{"29", 1},    // 29 only; 28.99 is part of 28
+		{"27", 1},    // 27.99
+		{"-3", 2},    // integer part -3: -3.5, -3
+		{"-4", 1},    // -4
+		{"-3.5", 1},  // -3.5 down to -3.59
+		{"5", 0},
+	} {
+		res := h.do(http.MethodGet, "/api/sensor-data/history?filter=temperature&q="+tc.query, token, nil)
+		expect(t, res, http.StatusOK, "")
+		var b historyBody
+		_ = json.Unmarshal(res.Body, &b)
+		if b.TotalElements != tc.total {
+			t.Errorf("q=%s: total = %d, want %d", tc.query, b.TotalElements, tc.total)
+		}
+	}
+}
 
 func TestDeviceList(t *testing.T) {
 	h := newHarness(t)

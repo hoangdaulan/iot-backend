@@ -41,10 +41,28 @@ type SensorRepository interface {
 }
 
 type SensorHistoryFilter struct {
-	Type          *model.SensorType
-	From, To      *time.Time
-	Value         *float64
+	Type     *model.SensorType
+	From, To *time.Time
+	Value    *float64
+	// ValueFrom (inclusive) and ValueTo (exclusive) bound the measured value.
+	ValueFrom, ValueTo *float64
+	// SensorName is a case-insensitive substring of the sensor name; with SensorID set, a
+	// sensor also matches by that exact id.
+	SensorName string
+	SensorID   *int64
+	// Any, when set, keeps readings matching at least one of its conditions.
+	Any           *SensorAnyOf
 	Offset, Limit int
+}
+
+// SensorAnyOf is a union of conditions; the ones left empty are not part of it. A reading
+// matches by its sensor (name substring or id), its value in [ValueFrom, ValueTo), or its
+// timestamp in [From, To].
+type SensorAnyOf struct {
+	SensorName         string
+	SensorID           *int64
+	ValueFrom, ValueTo *float64
+	From, To           *time.Time
 }
 
 type DeviceRepository interface {

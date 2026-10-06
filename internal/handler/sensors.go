@@ -72,7 +72,7 @@ func (h *SensorHandler) Latest(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.LatestSensorDataResponse{Data: data, DeviceStatus: status, Devices: summaries})
 }
 
-// History handles GET /api/sensor-data/history?type=&timeRange=&value=&page=&size=.
+// History handles GET /api/sensor-data/history?type=&timeRange=&value=&filter=&q=&utcOffset=&page=&size=.
 // @Summary Sensor reading history
 // @Tags Sensors
 // @Produce json
@@ -80,6 +80,9 @@ func (h *SensorHandler) Latest(c *gin.Context) {
 // @Param type query string false "Sensor type"
 // @Param timeRange query string false "ISO-8601 interval <from>/<to>; '..' or empty means open-ended"
 // @Param value query number false "Exact value filter"
+// @Param filter query string false "What q searches: all (any of sensor, value or time), sensor (id or name), temperature, humidity, light (value starting with q, e.g. 28 = 28.0-28.99) or time (yyyy/MM/dd HH:mm:ss prefix)"
+// @Param q query string false "Search text for filter; empty means no search"
+// @Param utcOffset query int false "Client offset east of UTC in minutes, used to read a time search (default 0)"
 // @Param page query int false "0-based page"
 // @Param size query int false "Page size"
 // @Success 200 {object} dto.SensorHistoryResponse
@@ -132,7 +135,12 @@ func parseSensorHistoryQuery(c *gin.Context) (service.HistoryQuery, error) {
 		}
 		q.Value = &v
 	}
+	q.Filter = c.Query("filter")
+	q.Query = c.Query("q")
 	var err error
+	if q.UtcOffsetMinutes, err = queryInt(c, "utcOffset"); err != nil {
+		return q, err
+	}
 	if q.Page, err = queryInt(c, "page"); err != nil {
 		return q, err
 	}

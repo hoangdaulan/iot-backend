@@ -206,9 +206,46 @@ func (r *SensorRepository) History(
 		return (f.Type == nil || rd.Type == *f.Type) &&
 			(f.From == nil || !rd.Timestamp.Before(*f.From)) &&
 			(f.To == nil || !rd.Timestamp.After(*f.To)) &&
-			(f.Value == nil || rd.Value == *f.Value)
+			(f.Value == nil || rd.Value == *f.Value) &&
+			(f.ValueFrom == nil || rd.Value >= *f.ValueFrom) &&
+			(f.ValueTo == nil || rd.Value < *f.ValueTo) &&
+			r.matchesSensor(rd, f) &&
+			r.matchesAny(rd, f.Any)
 	})
 	return page(all, f.Offset, f.Limit), int64(len(all)), nil
+}
+
+// matchesSensor reports whether the reading's sensor matches the name/id search of f.
+func (r *SensorRepository) matchesSensor(rd model.SensorReading, f repository.SensorHistoryFilter) bool {
+	if f.SensorName == "" {
+		return true
+	}
+	if f.SensorID != nil && rd.SensorID == *f.SensorID {
+		return true
+	}
+	for _, s := range r.s.sensors {
+		if s.ID == rd.SensorID {
+			return strings.Contains(strings.ToLower(s.Name), strings.ToLower(f.SensorName))
+		}
+	}
+	return false
+}
+
+// matchesAny reports whether the reading satisfies at least one condition of a; an empty union
+// matches everything.
+func (r *SensorRepository) matchesAny(rd model.SensorReading, a *repository.SensorAnyOf) bool {
+	if a == nil {
+		return true
+	}
+	hasSensor := a.SensorName != ""
+	hasValue := a.ValueFrom != nil && a.ValueTo != nil
+	hasTime := a.From != nil && a.To != nil
+	if !hasSensor && !hasValue && !hasTime {
+		return true
+	}
+	return (hasSensor && r.matchesSensor(rd, repository.SensorHistoryFilter{SensorName: a.SensorName, SensorID: a.SensorID})) ||
+		(hasValue && rd.Value >= *a.ValueFrom && rd.Value < *a.ValueTo) ||
+		(hasTime && !rd.Timestamp.Before(*a.From) && !rd.Timestamp.After(*a.To))
 }
 
 // ── Devices ──

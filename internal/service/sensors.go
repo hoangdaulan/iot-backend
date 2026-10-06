@@ -3,6 +3,10 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,12 +50,26 @@ func (s *SensorService) Latest(ctx context.Context) ([]model.SensorReading, []mo
 	return readings, devices, nil
 }
 
+// Search fields of the history filter. FilterAll applies no search.
+const (
+	FilterAll    = "all"
+	FilterSensor = "sensor"
+	FilterTime   = "time"
+	// A sensor type name (temperature, humidity, light) filters by type and searches the value.
+)
+
 type HistoryQuery struct {
 	Type     *model.SensorType
 	From, To *time.Time
 	Value    *float64
-	Page     int
-	Size     int
+	// Filter selects what Query searches: FilterAll, FilterSensor (sensor id or name), a sensor
+	// type (measured value) or FilterTime (yyyy/MM/dd HH:mm:ss prefix). Empty means FilterAll.
+	Filter string
+	Query  string
+	// UtcOffsetMinutes is the client's offset east of UTC, used to read a FilterTime query.
+	UtcOffsetMinutes int
+	Page             int
+	Size             int
 }
 
 // Validate checks paging and the time range, applying the default page size.
@@ -75,10 +93,170 @@ func (s *SensorService) History(ctx context.Context, q HistoryQuery) ([]model.Se
 	if q.Type != nil && !q.Type.Valid() {
 		return nil, 0, apperr.BadRequest("Invalid query parameters: type must be temperature, humidity or light")
 	}
-	return s.sensors.History(ctx, repository.SensorHistoryFilter{
+	filter := repository.SensorHistoryFilter{
 		Type: q.Type, From: q.From, To: q.To, Value: q.Value,
 		Offset: q.Page * q.Size, Limit: q.Size,
-	})
+	}
+	if err := q.applySearch(&filter); err != nil {
+		return nil, 0, err
+	}
+	return s.sensors.History(ctx, filter)
+}
+
+// applySearch narrows f by the Filter/Query pair. FilterAll with a query keeps what matches any
+// of the other filters: the sensor, the value or the time.
+func (q *HistoryQuery) applySearch(f *repository.SensorHistoryFilter) error {
+	query := strings.TrimSpace(q.Query)
+	switch q.Filter {
+	case "", FilterAll:
+		if query != "" {
+			f.Any = q.anyOf(query)
+		}
+		return nil
+	case FilterSensor:
+		if query == "" {
+			return nil
+		}
+		f.SensorName = query
+		f.SensorID = parseID(query)
+		return nil
+	case FilterTime:
+		if query == "" {
+			return nil
+		}
+		from, to, err := parseTimePrefix(query, q.UtcOffsetMinutes)
+		if err != nil {
+			return err
+		}
+		f.From, f.To = laterOf(f.From, from), earlierOf(f.To, to)
+		return nil
+	}
+
+	t := model.SensorType(q.Filter)
+	if !t.Valid() {
+		return apperr.BadRequest("Invalid query parameters: filter must be all, sensor, temperature, humidity, light or time")
+	}
+	f.Type = &t
+	if query == "" {
+		return nil
+	}
+	from, to, err := valueRange(query)
+	if err != nil {
+		return err
+	}
+	f.ValueFrom, f.ValueTo = &from, &to
+	return nil
+}
+
+// anyOf builds the union for FilterAll. A query that is not a number or a time simply adds no
+// condition for it instead of being rejected.
+func (q *HistoryQuery) anyOf(query string) *repository.SensorAnyOf {
+	any := &repository.SensorAnyOf{SensorName: query, SensorID: parseID(query)}
+	if from, to, err := valueRange(query); err == nil {
+		any.ValueFrom, any.ValueTo = &from, &to
+	}
+	if from, to, err := parseTimePrefix(query, q.UtcOffsetMinutes); err == nil {
+		any.From, any.To = from, to
+	}
+	return any
+}
+
+func parseID(query string) *int64 {
+	id, err := strconv.ParseInt(query, 10, 64)
+	if err != nil {
+		return nil
+	}
+	return &id
+}
+
+// valueRange returns the values that start with the typed number: "28" is every value with
+// integer part 28 (28 up to, not including, 29) and "28.5" every value from 28.5 up to 28.6.
+// A negative number counts its digits the same way, so "-3" is -3.99 up to -3.
+func valueRange(query string) (from, to float64, err error) {
+	v, err := strconv.ParseFloat(query, 64)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0, 0, apperr.BadRequest("Invalid query parameters: q must be a number")
+	}
+	decimals := 0
+	if _, frac, ok := strings.Cut(query, "."); ok {
+		decimals = len(frac)
+	}
+	step := 1 / math.Pow10(decimals)
+	// Round-trip through text so a bound is the same double as the stored value it names.
+	round := func(x float64) float64 {
+		r, _ := strconv.ParseFloat(strconv.FormatFloat(x, 'f', decimals, 64), 64)
+		return r
+	}
+	if strings.HasPrefix(query, "-") {
+		// (v-step, v]: the lower bound is exclusive and the upper one inclusive.
+		return math.Nextafter(round(v-step), math.Inf(1)), math.Nextafter(v, math.Inf(1)), nil
+	}
+	return v, round(v + step), nil
+}
+
+var timePrefixPattern = regexp.MustCompile(
+	`^(\d{4})(?:[/-](\d{1,2})(?:[/-](\d{1,2})(?:[ T](\d{1,2})(?::(\d{1,2})(?::(\d{1,2}))?)?)?)?)?$`)
+
+// parseTimePrefix reads yyyy[/MM[/dd[ HH[:mm[:ss]]]]] as the whole period it names, in the
+// client's time zone: "2026/10/06 11" is 11:00:00 through 11:59:59 on 6 October 2026.
+func parseTimePrefix(query string, utcOffsetMinutes int) (from, to *time.Time, err error) {
+	invalid := apperr.BadRequest("Invalid query parameters: q must be yyyy/MM/dd HH:mm:ss, or a leading part of it")
+	m := timePrefixPattern.FindStringSubmatch(query)
+	if m == nil {
+		return nil, nil, invalid
+	}
+	// parts: year, month, day, hour, minute, second; -1 marks a part that was not typed.
+	var parts [6]int
+	given := 0
+	for i := range parts {
+		parts[i] = -1
+		if m[i+1] != "" {
+			parts[i], _ = strconv.Atoi(m[i+1])
+			given = i + 1
+		}
+	}
+	loc := time.FixedZone("client", utcOffsetMinutes*60)
+	start := time.Date(parts[0], time.Month(max(parts[1], 1)), max(parts[2], 1),
+		max(parts[3], 0), max(parts[4], 0), max(parts[5], 0), 0, loc)
+	// Date normalizes out-of-range parts (month 13, day 32...), which must be rejected instead.
+	got := [6]int{start.Year(), int(start.Month()), start.Day(), start.Hour(), start.Minute(), start.Second()}
+	for i := range given {
+		if got[i] != parts[i] {
+			return nil, nil, invalid
+		}
+	}
+	var end time.Time
+	switch given {
+	case 1:
+		end = start.AddDate(1, 0, 0)
+	case 2:
+		end = start.AddDate(0, 1, 0)
+	case 3:
+		end = start.AddDate(0, 0, 1)
+	case 4:
+		end = start.Add(time.Hour)
+	case 5:
+		end = start.Add(time.Minute)
+	default:
+		end = start.Add(time.Second)
+	}
+	start, end = start.UTC(), end.Add(-time.Microsecond).UTC()
+	return &start, &end, nil
+}
+
+// laterOf and earlierOf combine an explicit bound with a searched one; nil means unbounded.
+func laterOf(a, b *time.Time) *time.Time {
+	if a == nil || (b != nil && b.After(*a)) {
+		return b
+	}
+	return a
+}
+
+func earlierOf(a, b *time.Time) *time.Time {
+	if a == nil || (b != nil && b.Before(*a)) {
+		return b
+	}
+	return a
 }
 
 // Ingest stores one SensorData row per value, using the three seeded sensors. Values for types

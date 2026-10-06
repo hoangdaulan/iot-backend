@@ -50,6 +50,8 @@ func (r *SensorRepository) InsertData(ctx context.Context, data []model.SensorDa
 	return nil
 }
 
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
 const readingColumns = `d.id, d.sensor_id, d.value, d.timestamp, s.type, s.unit`
 
 func scanReading(row pgx.CollectableRow) (model.SensorReading, error) {
@@ -96,6 +98,44 @@ func (r *SensorRepository) History(
 	}
 	if f.Value != nil {
 		add("d.value = $%d", *f.Value)
+	}
+	if f.ValueFrom != nil {
+		add("d.value >= $%d", *f.ValueFrom)
+	}
+	if f.ValueTo != nil {
+		add("d.value < $%d", *f.ValueTo)
+	}
+	if f.SensorName != "" {
+		args = append(args, "%"+likeEscaper.Replace(f.SensorName)+"%")
+		clause := fmt.Sprintf("s.name ILIKE $%d", len(args))
+		if f.SensorID != nil {
+			args = append(args, *f.SensorID)
+			clause = fmt.Sprintf("(%s OR s.id = $%d)", clause, len(args))
+		}
+		where = append(where, clause)
+	}
+	if a := f.Any; a != nil {
+		var any []string
+		if a.SensorName != "" {
+			args = append(args, "%"+likeEscaper.Replace(a.SensorName)+"%")
+			clause := fmt.Sprintf("s.name ILIKE $%d", len(args))
+			if a.SensorID != nil {
+				args = append(args, *a.SensorID)
+				clause += fmt.Sprintf(" OR s.id = $%d", len(args))
+			}
+			any = append(any, "("+clause+")")
+		}
+		if a.ValueFrom != nil && a.ValueTo != nil {
+			args = append(args, *a.ValueFrom, *a.ValueTo)
+			any = append(any, fmt.Sprintf("(d.value >= $%d AND d.value < $%d)", len(args)-1, len(args)))
+		}
+		if a.From != nil && a.To != nil {
+			args = append(args, *a.From, *a.To)
+			any = append(any, fmt.Sprintf("(d.timestamp >= $%d AND d.timestamp <= $%d)", len(args)-1, len(args)))
+		}
+		if len(any) > 0 {
+			where = append(where, "("+strings.Join(any, " OR ")+")")
+		}
 	}
 	from := ` FROM sensor_data d JOIN sensors s ON s.id = d.sensor_id`
 	if len(where) > 0 {

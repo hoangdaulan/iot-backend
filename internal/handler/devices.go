@@ -23,6 +23,27 @@ func NewDeviceHandler(devices *service.DeviceService, logger *slog.Logger) *Devi
 	return &DeviceHandler{devices: devices, logger: logger}
 }
 
+// List handles GET /api/devices.
+// @Summary List devices
+// @Tags Devices
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} dto.DeviceSummary
+// @Failure 401 {object} dto.ErrorResponse
+// @Router /devices [get]
+func (h *DeviceHandler) List(c *gin.Context) {
+	devices, err := h.devices.List(c.Request.Context())
+	if err != nil {
+		respondError(c, h.logger, err)
+		return
+	}
+	out := make([]dto.DeviceSummary, 0, len(devices))
+	for _, d := range devices {
+		out = append(out, dto.DeviceSummary{ID: d.ID, Name: d.Name, Type: d.Type, Status: d.Status})
+	}
+	c.JSON(http.StatusOK, out)
+}
+
 // Command handles POST /api/devices/:id/command. The response body is always a
 // DeviceCommandResult: 200 for SUCCESS and FAILED, 504 for TIMEOUT.
 // @Summary Send a command to a device

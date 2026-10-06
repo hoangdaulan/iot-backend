@@ -415,6 +415,19 @@ func TestSensorHistory(t *testing.T) {
 
 // ── Devices ──
 
+func TestDeviceList(t *testing.T) {
+	h := newHarness(t)
+	token := h.login("user01")
+
+	res := h.do(http.MethodGet, "/api/devices", token, nil)
+	expect(t, res, http.StatusOK, "")
+	want := `[{"id":1,"name":"LED 1","type":"LED","status":"OFF"},{"id":2,"name":"LED 2","type":"LED","status":"OFF"},{"id":3,"name":"LED 3","type":"LED","status":"OFF"}]`
+	if string(res.Body) != want {
+		t.Errorf("body = %s", res.Body)
+	}
+	expect(t, h.do(http.MethodGet, "/api/devices", "", nil), http.StatusUnauthorized, "")
+}
+
 func TestDeviceCommand(t *testing.T) {
 	h := newHarness(t)
 	token := h.login("user01")

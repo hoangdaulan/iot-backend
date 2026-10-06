@@ -52,6 +52,7 @@ func New(d Deps) *gin.Engine {
 	protected.GET("/sensor-data/latest", sensors.Latest)
 	protected.GET("/sensor-data/history", sensors.History)
 
+	protected.GET("/devices", devices.List)
 	protected.POST("/devices/:id/command", devices.Command)
 	protected.GET("/devices/control-history", devices.History)
 

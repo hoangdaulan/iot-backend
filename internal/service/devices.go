@@ -134,6 +134,11 @@ func (s *DeviceService) SendCommand(
 	return result, nil
 }
 
+// List returns all devices ordered by id.
+func (s *DeviceService) List(ctx context.Context) ([]model.Device, error) {
+	return s.devices.List(ctx)
+}
+
 // HandleResponse delivers an ESP32 response to the command waiting for it. Responses for other
 // or already finished commands are ignored.
 func (s *DeviceService) HandleResponse(resp DeviceResponse) {

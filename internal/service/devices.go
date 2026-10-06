@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -167,9 +168,15 @@ func (s *DeviceService) setPending(p *pendingCommand) {
 
 type ActionHistoryQuery struct {
 	DeviceID *int64
+	Action   *model.ActionType
+	Result   *model.ActionResult
 	From, To *time.Time
-	Page     int
-	Size     int
+	// Query matches the device name or a leading part of yyyy/MM/dd HH:mm:ss (read at
+	// UtcOffsetMinutes east of UTC); empty means no search.
+	Query            string
+	UtcOffsetMinutes int
+	Page             int
+	Size             int
 }
 
 func (s *DeviceService) History(
@@ -179,10 +186,29 @@ func (s *DeviceService) History(
 	if err := paging.Validate(); err != nil {
 		return nil, 0, err
 	}
-	return s.devices.ActionHistory(ctx, repository.ActionHistoryFilter{
-		DeviceID: q.DeviceID, From: q.From, To: q.To,
+	if q.Action != nil && *q.Action != model.ActionTurnOn && *q.Action != model.ActionTurnOff {
+		return nil, 0, apperr.BadRequest("Invalid query parameters: action must be TURN_ON or TURN_OFF")
+	}
+	if q.Result != nil {
+		switch *q.Result {
+		case model.ResultPending, model.ResultSuccess, model.ResultFailed, model.ResultTimeout:
+		default:
+			return nil, 0, apperr.BadRequest("Invalid query parameters: result must be PENDING, SUCCESS, FAILED or TIMEOUT")
+		}
+	}
+	filter := repository.ActionHistoryFilter{
+		DeviceID: q.DeviceID, Action: q.Action, Result: q.Result, From: q.From, To: q.To,
 		Offset: paging.Page * paging.Size, Limit: paging.Size,
-	})
+	}
+	if query := strings.TrimSpace(q.Query); query != "" {
+		any := &repository.ActionAnyOf{DeviceName: query}
+		// A query that is not a time only searches the device name.
+		if from, to, err := parseTimePrefix(query, q.UtcOffsetMinutes); err == nil {
+			any.From, any.To = from, to
+		}
+		filter.Any = any
+	}
+	return s.devices.ActionHistory(ctx, filter)
 }
 
 func defaultMessage(command model.DeviceCommand, status model.ActionResult) string {

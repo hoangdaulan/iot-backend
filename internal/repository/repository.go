@@ -78,7 +78,18 @@ type DeviceRepository interface {
 }
 
 type ActionHistoryFilter struct {
-	DeviceID      *int64
-	From, To      *time.Time
+	DeviceID *int64
+	Action   *model.ActionType
+	Result   *model.ActionResult
+	From, To *time.Time
+	// Any, when set, keeps actions matching at least one of its conditions.
+	Any           *ActionAnyOf
 	Offset, Limit int
+}
+
+// ActionAnyOf is a union of conditions; the ones left empty are not part of it. An action
+// matches by a case-insensitive substring of its device name, or its timestamp in [From, To].
+type ActionAnyOf struct {
+	DeviceName string
+	From, To   *time.Time
 }

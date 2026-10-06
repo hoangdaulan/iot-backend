@@ -107,6 +107,26 @@ func (r *DeviceRepository) ActionHistory(
 	if f.To != nil {
 		add("a.timestamp <= $%d", *f.To)
 	}
+	if f.Action != nil {
+		add("a.action = $%d", string(*f.Action))
+	}
+	if f.Result != nil {
+		add("a.result = $%d", string(*f.Result))
+	}
+	if x := f.Any; x != nil {
+		var any []string
+		if x.DeviceName != "" {
+			args = append(args, "%"+likeEscaper.Replace(x.DeviceName)+"%")
+			any = append(any, fmt.Sprintf("d.name ILIKE $%d", len(args)))
+		}
+		if x.From != nil && x.To != nil {
+			args = append(args, *x.From, *x.To)
+			any = append(any, fmt.Sprintf("(a.timestamp >= $%d AND a.timestamp <= $%d)", len(args)-1, len(args)))
+		}
+		if len(any) > 0 {
+			where = append(where, "("+strings.Join(any, " OR ")+")")
+		}
+	}
 	from := ` FROM device_actions a JOIN devices d ON d.id = a.device_id`
 	if len(where) > 0 {
 		from += " WHERE " + strings.Join(where, " AND ")

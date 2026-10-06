@@ -320,7 +320,10 @@ func (r *DeviceRepository) ActionHistory(
 	for _, a := range r.s.actions {
 		if (f.DeviceID == nil || a.DeviceID == *f.DeviceID) &&
 			(f.From == nil || !a.Timestamp.Before(*f.From)) &&
-			(f.To == nil || !a.Timestamp.After(*f.To)) {
+			(f.To == nil || !a.Timestamp.After(*f.To)) &&
+			(f.Action == nil || a.Action == *f.Action) &&
+			(f.Result == nil || a.Result == *f.Result) &&
+			matchesActionAny(a, r.s.devices[a.DeviceID].Name, f.Any) {
 			all = append(all, model.DeviceActionHistory{DeviceAction: a, DeviceName: r.s.devices[a.DeviceID].Name})
 		}
 	}
@@ -331,6 +334,21 @@ func (r *DeviceRepository) ActionHistory(
 		return all[i].ID > all[j].ID
 	})
 	return page(all, f.Offset, f.Limit), int64(len(all)), nil
+}
+
+// matchesActionAny reports whether the action satisfies at least one condition of x; an empty
+// union matches everything.
+func matchesActionAny(a model.DeviceAction, deviceName string, x *repository.ActionAnyOf) bool {
+	if x == nil {
+		return true
+	}
+	hasName := x.DeviceName != ""
+	hasTime := x.From != nil && x.To != nil
+	if !hasName && !hasTime {
+		return true
+	}
+	return (hasName && strings.Contains(strings.ToLower(deviceName), strings.ToLower(x.DeviceName))) ||
+		(hasTime && !a.Timestamp.Before(*x.From) && !a.Timestamp.After(*x.To))
 }
 
 func page[T any](all []T, offset, limit int) []T {

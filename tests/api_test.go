@@ -618,6 +618,56 @@ func TestDeviceHistory(t *testing.T) {
 	})
 }
 
+func TestDeviceHistorySearch(t *testing.T) {
+	h := newHarness(t)
+	token := h.login("admin")
+	h.do(http.MethodPost, "/api/devices/1/command", token, `{"command":"ON"}`)
+	h.do(http.MethodPost, "/api/devices/2/command", token, `{"command":"ON"}`)
+	h.esp.answer(model.ResultFailed, "")
+	h.do(http.MethodPost, "/api/devices/1/command", token, `{"command":"OFF"}`)
+	now := time.Now().UTC()
+
+	total := func(query string) int64 {
+		t.Helper()
+		res := h.do(http.MethodGet, "/api/devices/control-history"+query, token, nil)
+		expect(t, res, http.StatusOK, "")
+		var p struct{ TotalElements int64 }
+		_ = json.Unmarshal(res.Body, &p)
+		return p.TotalElements
+	}
+	for _, tc := range []struct {
+		query string
+		want  int64
+	}{
+		{"", 3},
+		{"?deviceId=1", 2},
+		{"?deviceId=2", 1},
+		{"?deviceId=3", 0},
+		{"?action=TURN_ON", 2},
+		{"?action=TURN_OFF", 1},
+		{"?result=SUCCESS", 2},
+		{"?result=FAILED", 1},
+		{"?result=TIMEOUT", 0},
+		{"?deviceId=1&action=TURN_ON&result=SUCCESS", 1},
+		{"?q=led%202", 1},
+		{"?q=LED", 3},
+		{"?q=nothing", 0},
+		{"?q=" + now.Format("2006"), 3},
+		{"?q=" + now.Format("2006/01/02"), 3},
+		{"?q=" + now.Format("2006/01/02") + "%20" + now.Format("15") + "&utcOffset=0", 3},
+		{"?q=" + now.Add(-48*time.Hour).Format("2006/01/02"), 0},
+		{"?q=" + now.Format("2006/01/02") + "&deviceId=2", 1},
+		{"?q=", 3},
+	} {
+		if got := total(tc.query); got != tc.want {
+			t.Errorf("%s: total = %d, want %d", tc.query, got, tc.want)
+		}
+	}
+	for _, query := range []string{"?action=BLINK", "?result=DONE", "?utcOffset=x"} {
+		expect(t, h.do(http.MethodGet, "/api/devices/control-history"+query, token, nil), http.StatusBadRequest, "")
+	}
+}
+
 func TestCORSPreflight(t *testing.T) {
 	h := newHarness(t)
 	req := httptest.NewRequest(http.MethodOptions, "/api/auth/login", nil)

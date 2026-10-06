@@ -649,9 +649,6 @@ func TestDeviceHistorySearch(t *testing.T) {
 		{"?result=FAILED", 1},
 		{"?result=TIMEOUT", 0},
 		{"?deviceId=1&action=TURN_ON&result=SUCCESS", 1},
-		{"?q=led%202", 1},
-		{"?q=LED", 3},
-		{"?q=nothing", 0},
 		{"?q=" + now.Format("2006"), 3},
 		{"?q=" + now.Format("2006/01/02"), 3},
 		{"?q=" + now.Format("2006/01/02") + "%20" + now.Format("15") + "&utcOffset=0", 3},
@@ -663,7 +660,7 @@ func TestDeviceHistorySearch(t *testing.T) {
 			t.Errorf("%s: total = %d, want %d", tc.query, got, tc.want)
 		}
 	}
-	for _, query := range []string{"?action=BLINK", "?result=DONE", "?utcOffset=x"} {
+	for _, query := range []string{"?action=BLINK", "?result=DONE", "?utcOffset=x", "?q=led", "?q=2026/13"} {
 		expect(t, h.do(http.MethodGet, "/api/devices/control-history"+query, token, nil), http.StatusBadRequest, "")
 	}
 }

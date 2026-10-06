@@ -171,8 +171,8 @@ type ActionHistoryQuery struct {
 	Action   *model.ActionType
 	Result   *model.ActionResult
 	From, To *time.Time
-	// Query matches the device name or a leading part of yyyy/MM/dd HH:mm:ss (read at
-	// UtcOffsetMinutes east of UTC); empty means no search.
+	// Query is a leading part of yyyy/MM/dd HH:mm:ss, read at UtcOffsetMinutes east of UTC, and
+	// keeps the actions inside that period; empty means no search.
 	Query            string
 	UtcOffsetMinutes int
 	Page             int
@@ -201,12 +201,11 @@ func (s *DeviceService) History(
 		Offset: paging.Page * paging.Size, Limit: paging.Size,
 	}
 	if query := strings.TrimSpace(q.Query); query != "" {
-		any := &repository.ActionAnyOf{DeviceName: query}
-		// A query that is not a time only searches the device name.
-		if from, to, err := parseTimePrefix(query, q.UtcOffsetMinutes); err == nil {
-			any.From, any.To = from, to
+		from, to, err := parseTimePrefix(query, q.UtcOffsetMinutes)
+		if err != nil {
+			return nil, 0, err
 		}
-		filter.Any = any
+		filter.From, filter.To = laterOf(filter.From, from), earlierOf(filter.To, to)
 	}
 	return s.devices.ActionHistory(ctx, filter)
 }

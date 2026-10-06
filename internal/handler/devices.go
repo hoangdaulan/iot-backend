@@ -94,7 +94,7 @@ func (h *DeviceHandler) Command(c *gin.Context) {
 // @Param deviceId query int false "Device ID"
 // @Param action query string false "TURN_ON or TURN_OFF"
 // @Param result query string false "PENDING, SUCCESS, FAILED or TIMEOUT"
-// @Param q query string false "Search: device name, or a leading part of yyyy/MM/dd HH:mm:ss"
+// @Param q query string false "Time search: a leading part of yyyy/MM/dd HH:mm:ss, e.g. 2026/10/06 11"
 // @Param utcOffset query int false "Client offset east of UTC in minutes, used to read a time search (default 0)"
 // @Param from query string false "ISO-8601 start time"
 // @Param to query string false "ISO-8601 end time"

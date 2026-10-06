@@ -22,7 +22,9 @@ type Deps struct {
 	Sensors            *service.SensorService
 	Devices            *service.DeviceService
 	CORSAllowedOrigins []string
-	Logger             *slog.Logger
+	// UploadDir is served read-only at /uploads (avatars); empty disables it.
+	UploadDir string
+	Logger    *slog.Logger
 }
 
 func New(d Deps) *gin.Engine {
@@ -32,6 +34,13 @@ func New(d Deps) *gin.Engine {
 		c.JSON(http.StatusNotFound, dto.ErrorResponse{Message: "Not found"})
 	})
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"status": "ok"}) })
+
+	if d.UploadDir != "" {
+		uploads := r.Group("/uploads", func(c *gin.Context) {
+			c.Header("X-Content-Type-Options", "nosniff")
+		})
+		uploads.Static("/", d.UploadDir)
+	}
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
@@ -46,6 +55,7 @@ func New(d Deps) *gin.Engine {
 	protected := api.Group("", middleware.Auth(d.Tokens))
 	protected.GET("/auth/profile", auth.Profile)
 	protected.PATCH("/auth/profile", auth.UpdateProfile)
+	protected.POST("/auth/avatar", auth.UploadAvatar)
 	protected.PATCH("/auth/password", auth.ChangePassword)
 
 	protected.GET("/sensors", sensors.List)

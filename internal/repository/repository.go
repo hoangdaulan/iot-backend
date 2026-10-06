@@ -28,7 +28,7 @@ type UserRepository interface {
 
 // ProfileUpdate changes only its non-nil fields.
 type ProfileUpdate struct {
-	Name, Phone, Avatar, Github, Figma *string
+	Name, Phone, Avatar, Github, Figma, Swagger *string
 }
 
 type SensorRepository interface {

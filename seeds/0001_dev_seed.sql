@@ -6,11 +6,11 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- crypt(..., gen_salt('bf')) produces standard bcrypt ($2a$) hashes.
-INSERT INTO users (name, email, password, username, phone, github, figma, role)
+INSERT INTO users (name, email, password, username, phone, github, figma, swagger, role)
 VALUES ('Administrator', 'admin@myiot.local', crypt('123456', gen_salt('bf', 10)), 'admin',
-        '+84 912 345 678', 'https://github.com/myiot-admin', 'https://figma.com/@myiot-admin', 'ADMIN'),
+        '+84 912 345 678', 'https://github.com/myiot-admin', 'https://figma.com/@myiot-admin', 'http://localhost:8080/swagger/index.html', 'ADMIN'),
        ('Nguyen Van A', 'user01@myiot.local', crypt('123456', gen_salt('bf', 10)), 'user01',
-        NULL, NULL, NULL, 'USER')
+        NULL, NULL, NULL, NULL, 'USER')
 ON CONFLICT DO NOTHING;
 
 -- Seven days of readings every 10 minutes, only into an empty table.

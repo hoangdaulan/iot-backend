@@ -8,8 +8,11 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -65,6 +68,7 @@ type harness struct {
 	store   *memory.Store
 	sensors *service.SensorService
 	esp     *fakeESP32
+	uploads string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -73,7 +77,8 @@ func newHarness(t *testing.T) *harness {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	store := memory.NewStore()
 	tokens := service.NewTokenService("test-secret", time.Hour)
-	auth := service.NewAuthService(store.Users(), tokens).WithBcryptCost(bcrypt.MinCost)
+	uploads := t.TempDir()
+	auth := service.NewAuthService(store.Users(), tokens).WithBcryptCost(bcrypt.MinCost).WithUploadDir(uploads)
 	sensors := service.NewSensorService(store.Sensors(), store.Devices())
 	esp := &fakeESP32{}
 	esp.answer(model.ResultSuccess, "")
@@ -97,12 +102,32 @@ func newHarness(t *testing.T) *harness {
 	}
 
 	return &harness{
-		t: t, store: store, sensors: sensors, esp: esp,
+		t: t, store: store, sensors: sensors, esp: esp, uploads: uploads,
 		handler: router.New(router.Deps{
 			Auth: auth, Tokens: tokens, Sensors: sensors, Devices: devices,
-			CORSAllowedOrigins: []string{"*"}, Logger: logger,
+			CORSAllowedOrigins: []string{"*"}, UploadDir: uploads, Logger: logger,
 		}),
 	}
+}
+
+// upload posts one multipart file field.
+func (h *harness) upload(path, token, field, filename string, data []byte) response {
+	h.t.Helper()
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	if field != "" {
+		part, _ := w.CreateFormFile(field, filename)
+		_, _ = part.Write(data)
+	}
+	_ = w.Close()
+	req := httptest.NewRequest(http.MethodPost, path, &body)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rec := httptest.NewRecorder()
+	h.handler.ServeHTTP(rec, req)
+	return response{Code: rec.Code, Body: rec.Body.Bytes()}
 }
 
 type response struct {
@@ -178,6 +203,19 @@ func TestRegister(t *testing.T) {
 	if _, hasName := user["name"]; hasName {
 		t.Error("name should be omitted when unset")
 	}
+
+	t.Run("stores the full name", func(t *testing.T) {
+		res := h.do(http.MethodPost, "/api/auth/register", "", map[string]string{
+			"name": "  Tran Thi B ", "username": "user03", "email": "user03@x.io", "password": "123456",
+		})
+		expect(t, res, http.StatusCreated, "")
+		if got := res.json(t)["user"].(map[string]any)["name"]; got != "Tran Thi B" {
+			t.Errorf("name = %v", got)
+		}
+		if got := h.do(http.MethodGet, "/api/auth/profile", h.login("user03"), nil).json(t)["name"]; got != "Tran Thi B" {
+			t.Errorf("profile name = %v", got)
+		}
+	})
 
 	// The new account can log in, with its username or (case-insensitively) its email.
 	h.login("user02")
@@ -263,6 +301,36 @@ func TestProfile(t *testing.T) {
 		}
 	})
 
+	t.Run("PATCH updates swagger and the other editable fields", func(t *testing.T) {
+		res := h.do(http.MethodPatch, "/api/auth/profile", token, map[string]string{
+			"name": "New Name", "github": "https://github.com/x", "figma": "https://figma.com/@x",
+			"swagger": "https://example.com/swagger",
+		})
+		expect(t, res, http.StatusOK, "")
+		updated := res.json(t)
+		if updated["name"] != "New Name" || updated["github"] != "https://github.com/x" ||
+			updated["figma"] != "https://figma.com/@x" || updated["swagger"] != "https://example.com/swagger" {
+			t.Errorf("updated = %v", updated)
+		}
+		if got := h.do(http.MethodGet, "/api/auth/profile", token, nil).json(t)["swagger"]; got != "https://example.com/swagger" {
+			t.Errorf("profile swagger = %v", got)
+		}
+	})
+
+	t.Run("PATCH cannot change the email or username", func(t *testing.T) {
+		res := h.do(http.MethodPatch, "/api/auth/profile", token, map[string]string{
+			"email": "hacker@x.io", "username": "hacker", "role": "USER", "phone": "111",
+		})
+		expect(t, res, http.StatusOK, "")
+		updated := res.json(t)
+		if updated["email"] != "admin@myiot.local" || updated["username"] != "admin" || updated["role"] != "ADMIN" {
+			t.Errorf("identity changed: %v", updated)
+		}
+		if updated["phone"] != "111" {
+			t.Errorf("phone = %v", updated["phone"])
+		}
+	})
+
 	t.Run("change password", func(t *testing.T) {
 		expect(t, h.do(http.MethodPatch, "/api/auth/password", token,
 			map[string]string{"oldPassword": "wrong", "newPassword": "abcdef"}),
@@ -276,6 +344,63 @@ func TestProfile(t *testing.T) {
 			map[string]string{"username": "admin", "password": "123456"}), http.StatusUnauthorized, "")
 		expect(t, h.do(http.MethodPost, "/api/auth/login", "",
 			map[string]string{"username": "admin", "password": "new-secret"}), http.StatusOK, "")
+	})
+}
+
+func TestAvatarUpload(t *testing.T) {
+	h := newHarness(t)
+	token := h.login("user01")
+	png := append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)
+	jpeg := append([]byte("\xff\xd8\xff\xe0"), make([]byte, 64)...)
+
+	res := h.upload("/api/auth/avatar", token, "file", "me.png", png)
+	expect(t, res, http.StatusOK, "")
+	first, _ := res.json(t)["avatar"].(string)
+	if !strings.HasPrefix(first, "/uploads/avatars/") || !strings.HasSuffix(first, ".png") {
+		t.Fatalf("avatar = %q", first)
+	}
+	if got := h.do(http.MethodGet, "/api/auth/profile", token, nil).json(t)["avatar"]; got != first {
+		t.Errorf("profile avatar = %v, want %s", got, first)
+	}
+
+	t.Run("is served without a token", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, first, nil)
+		rec := httptest.NewRecorder()
+		h.handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), png) {
+			t.Errorf("GET %s = %d, %d bytes", first, rec.Code, rec.Body.Len())
+		}
+		if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+			t.Error("uploads must be served with nosniff")
+		}
+	})
+
+	t.Run("a new upload replaces the old file", func(t *testing.T) {
+		res := h.upload("/api/auth/avatar", token, "file", "me.jpg", jpeg)
+		expect(t, res, http.StatusOK, "")
+		second, _ := res.json(t)["avatar"].(string)
+		if second == first || !strings.HasSuffix(second, ".jpg") {
+			t.Errorf("second avatar = %q", second)
+		}
+		if _, err := os.Stat(filepath.Join(h.uploads, "avatars", filepath.Base(first))); !os.IsNotExist(err) {
+			t.Errorf("old avatar file still exists (err = %v)", err)
+		}
+		if _, err := os.Stat(filepath.Join(h.uploads, "avatars", filepath.Base(second))); err != nil {
+			t.Errorf("new avatar file missing: %v", err)
+		}
+	})
+
+	t.Run("rejects bad uploads", func(t *testing.T) {
+		expect(t, h.upload("/api/auth/avatar", token, "file", "x.png", []byte("<script>alert(1)</script>")),
+			http.StatusBadRequest, "Avatar must be a PNG, JPEG, GIF or WebP image")
+		expect(t, h.upload("/api/auth/avatar", token, "file", "x.png", nil), http.StatusBadRequest, "")
+		expect(t, h.upload("/api/auth/avatar", token, "other", "x.png", png), http.StatusBadRequest, "")
+		big := append(append([]byte{}, png...), make([]byte, service.MaxAvatarBytes)...)
+		expect(t, h.upload("/api/auth/avatar", token, "file", "big.png", big), http.StatusBadRequest, "")
+	})
+
+	t.Run("requires a token", func(t *testing.T) {
+		expect(t, h.upload("/api/auth/avatar", "", "file", "me.png", png), http.StatusUnauthorized, "")
 	})
 }
 

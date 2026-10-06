@@ -20,13 +20,13 @@ type UserRepository struct{ pool *pgxpool.Pool }
 
 func NewUserRepository(pool *pgxpool.Pool) *UserRepository { return &UserRepository{pool: pool} }
 
-const userColumns = `id, name, email, password, username, phone, avatar, github, figma, role,
+const userColumns = `id, name, email, password, username, phone, avatar, github, figma, swagger, role,
 	created_at, updated_at`
 
 func scanUser(row pgx.Row) (*model.User, error) {
 	var u model.User
 	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.PasswordHash, &u.Username, &u.Phone, &u.Avatar,
-		&u.Github, &u.Figma, &u.Role, &u.CreatedAt, &u.UpdatedAt)
+		&u.Github, &u.Figma, &u.Swagger, &u.Role, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, repository.ErrNotFound
 	}
@@ -38,10 +38,10 @@ func scanUser(row pgx.Row) (*model.User, error) {
 
 func (r *UserRepository) Create(ctx context.Context, u *model.User) error {
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO users (name, email, password, username, phone, avatar, github, figma, role)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO users (name, email, password, username, phone, avatar, github, figma, swagger, role)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING id, created_at, updated_at`,
-		u.Name, u.Email, u.PasswordHash, u.Username, u.Phone, u.Avatar, u.Github, u.Figma, u.Role,
+		u.Name, u.Email, u.PasswordHash, u.Username, u.Phone, u.Avatar, u.Github, u.Figma, u.Swagger, u.Role,
 	).Scan(&u.ID, &u.CreatedAt, &u.UpdatedAt)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
@@ -72,10 +72,11 @@ func (r *UserRepository) UpdateProfile(
 			avatar = COALESCE($4, avatar),
 			github = COALESCE($5, github),
 			figma = COALESCE($6, figma),
+			swagger = COALESCE($7, swagger),
 			updated_at = now()
 		WHERE id = $1
 		RETURNING `+userColumns,
-		id, p.Name, p.Phone, p.Avatar, p.Github, p.Figma))
+		id, p.Name, p.Phone, p.Avatar, p.Github, p.Figma, p.Swagger))
 }
 
 func (r *UserRepository) UpdatePassword(ctx context.Context, id int64, passwordHash string) error {

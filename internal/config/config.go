@@ -16,6 +16,7 @@ type Config struct {
 	JWTSecret          string
 	JWTTTL             time.Duration
 	CORSAllowedOrigins []string
+	UploadDir          string
 	RunMigrations      bool
 	RunSeeds           bool
 	MQTT               MQTT
@@ -45,6 +46,7 @@ func Load() (Config, error) {
 		JWTSecret:          os.Getenv("JWT_SECRET"),
 		JWTTTL:             duration("JWT_TTL", 24*time.Hour, &errs),
 		CORSAllowedOrigins: list("CORS_ALLOWED_ORIGINS", "*"),
+		UploadDir:          env("UPLOAD_DIR", "uploads"),
 		RunMigrations:      boolean("RUN_MIGRATIONS", true, &errs),
 		RunSeeds:           boolean("RUN_SEEDS", false, &errs),
 		MQTT: MQTT{

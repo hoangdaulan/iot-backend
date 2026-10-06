@@ -11,6 +11,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
       JWT_TTL: 24h
       CORS_ALLOWED_ORIGINS: "*"
+      UPLOAD_DIR: /data/uploads
       RUN_MIGRATIONS: "false"
       RUN_SEEDS: "false"
       MQTT_ENABLED: "false"
@@ -21,3 +22,8 @@ services:
       MQTT_COMMAND_TIMEOUT: 5s
     ports:
       - "${HTTP_PORT:-8080}:8080"
+    volumes:
+      - uploads:/data/uploads
+
+volumes:
+  uploads:

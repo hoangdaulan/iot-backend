@@ -68,7 +68,7 @@ func run(logger *slog.Logger) error {
 	deviceRepo := postgres.NewDeviceRepository(pool)
 
 	tokens := service.NewTokenService(cfg.JWTSecret, cfg.JWTTTL)
-	auth := service.NewAuthService(users, tokens)
+	auth := service.NewAuthService(users, tokens).WithUploadDir(cfg.UploadDir)
 	sensors := service.NewSensorService(sensorRepo, deviceRepo)
 
 	// The MQTT client needs the device service for responses and vice versa, so the client is
@@ -96,7 +96,7 @@ func run(logger *slog.Logger) error {
 		Addr: ":" + cfg.HTTPPort,
 		Handler: router.New(router.Deps{
 			Auth: auth, Tokens: tokens, Sensors: sensors, Devices: devices,
-			CORSAllowedOrigins: cfg.CORSAllowedOrigins, Logger: logger,
+			CORSAllowedOrigins: cfg.CORSAllowedOrigins, UploadDir: cfg.UploadDir, Logger: logger,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 		// Must outlast a device command, which waits up to MQTT_COMMAND_TIMEOUT.

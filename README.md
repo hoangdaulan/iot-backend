@@ -64,7 +64,7 @@ tests/                 HTTP API tests; PostgreSQL and MQTT integration tests
 
 | Table | Columns |
 |---|---|
-| `users` | id, name, email (unique), password (bcrypt), username (unique), phone, avatar, github, figma, role (`ADMIN`/`USER`), created_at, updated_at |
+| `users` | id, name, email (unique), password (bcrypt), username (unique), phone, avatar, github, figma, swagger, role (`ADMIN`/`USER`), created_at, updated_at |
 | `devices` | id, name, type, status (`ON`/`OFF`), mqtt_topic, created_at, updated_at |
 | `sensors` | id, name, type (unique: `temperature`/`humidity`/`light`), unit, status, mqtt_topic, created_at, updated_at |
 | `sensor_data` | id, sensor_id → sensors, value, timestamp. Indexes: `sensor_id`, `timestamp`, `(sensor_id, timestamp DESC)` |
@@ -79,9 +79,10 @@ Errors are `{"message": "..."}` with 400, 401, 403, 404, 409, 500 or 504. Every 
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/api/auth/login` | `{username, password}` (username or email) → `{accessToken, user: {id, username, name?, role}}`; 401 `Invalid email or password` |
-| POST | `/api/auth/register` | `{username, email, password}` → 201 `{message, user}`; 409 if taken; 400 if invalid (username ≥ 3, password 6–72 bytes, valid email) |
+| POST | `/api/auth/register` | `{name?, username, email, password}` (`name` is the full name) → 201 `{message, user}`; 409 if taken; 400 if invalid (username ≥ 3, password 6–72 bytes, valid email) |
 | GET | `/api/auth/profile` | full user, never the password |
-| PATCH | `/api/auth/profile` | any of `{name, phone, avatar, github, figma}`; absent fields unchanged |
+| PATCH | `/api/auth/profile` | any of `{name, phone, avatar, github, figma, swagger}`; absent fields unchanged. `email` and `username` cannot be changed |
+| POST | `/api/auth/avatar` | multipart field `file` (PNG/JPEG/GIF/WebP, ≤ 2 MB) → full user whose `avatar` is a path like `/uploads/avatars/1-ab12.png`, served without auth by `GET /uploads/...` |
 | PATCH | `/api/auth/password` | `{oldPassword, newPassword}` → 204; wrong old password is **400** (not 401, which would end the session) |
 | GET | `/api/sensors` | the three sensors |
 | GET | `/api/sensor-data/latest` | `{data: {temperature\|humidity\|light: {id, value, unit, timestamp}}, deviceStatus: "ON"\|"OFF"}`; a type is absent until it has data |
@@ -133,6 +134,7 @@ docker compose exec mosquitto sh -c 'msg=$(mosquitto_sub -t myiot/esp32/device-c
 | `JWT_SECRET` | — | **required** |
 | `JWT_TTL` | `24h` | access-token lifetime |
 | `CORS_ALLOWED_ORIGINS` | `*` | comma-separated, or `*` |
+| `UPLOAD_DIR` | `uploads` | where uploaded avatars are stored (compose mounts a volume at `/data/uploads`) |
 | `RUN_MIGRATIONS` | `true` | |
 | `RUN_SEEDS` | `false` | development data (compose sets `true`) |
 | `MQTT_ENABLED` | `true` | |

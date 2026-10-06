@@ -28,13 +28,14 @@ type AuthService struct {
 	users      repository.UserRepository
 	tokens     *TokenService
 	bcryptCost int
+	uploadDir  string
 
 	dummyHashOnce sync.Once
 	dummyHash     []byte
 }
 
 func NewAuthService(users repository.UserRepository, tokens *TokenService) *AuthService {
-	return &AuthService{users: users, tokens: tokens, bcryptCost: bcrypt.DefaultCost}
+	return &AuthService{users: users, tokens: tokens, bcryptCost: bcrypt.DefaultCost, uploadDir: "uploads"}
 }
 
 // WithBcryptCost lowers the hashing cost; tests use bcrypt.MinCost to stay fast.
@@ -44,7 +45,8 @@ func (s *AuthService) WithBcryptCost(cost int) *AuthService {
 }
 
 type RegisterInput struct {
-	Username, Email, Password string
+	// Name is the full name; optional.
+	Name, Username, Email, Password string
 }
 
 func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*model.User, error) {
@@ -64,7 +66,7 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*model.Us
 	if err != nil {
 		return nil, err
 	}
-	user := &model.User{Username: username, Email: email, PasswordHash: string(hash), Role: model.RoleUser}
+	user := &model.User{Name: optionalText(in.Name), Username: username, Email: email, PasswordHash: string(hash), Role: model.RoleUser}
 	if err := s.users.Create(ctx, user); err != nil {
 		if errors.Is(err, repository.ErrConflict) {
 			return nil, apperr.Conflict("Username or email already exists")
@@ -134,6 +136,14 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID int64, oldPassw
 		return err
 	}
 	return s.users.UpdatePassword(ctx, userID, string(hash))
+}
+
+// optionalText trims s and returns nil when nothing is left.
+func optionalText(s string) *string {
+	if s = strings.TrimSpace(s); s == "" {
+		return nil
+	}
+	return &s
 }
 
 func validatePassword(password string) error {

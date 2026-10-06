@@ -33,6 +33,8 @@ type LoginResponse struct {
 }
 
 type RegisterRequest struct {
+	// Name is the full name; optional.
+	Name     string `json:"name"`
 	Username string `json:"username"`
 	Email    string `json:"email"`
 	Password string `json:"password"`
@@ -53,16 +55,18 @@ type User struct {
 	Avatar   *string    `json:"avatar,omitempty"`
 	Github   *string    `json:"github,omitempty"`
 	Figma    *string    `json:"figma,omitempty"`
+	Swagger  *string    `json:"swagger,omitempty"`
 	Role     model.Role `json:"role"`
 }
 
 // UpdateProfileRequest is a partial update: absent fields are left unchanged.
 type UpdateProfileRequest struct {
-	Name   *string `json:"name"`
-	Phone  *string `json:"phone"`
-	Avatar *string `json:"avatar"`
-	Github *string `json:"github"`
-	Figma  *string `json:"figma"`
+	Name    *string `json:"name"`
+	Phone   *string `json:"phone"`
+	Avatar  *string `json:"avatar"`
+	Github  *string `json:"github"`
+	Figma   *string `json:"figma"`
+	Swagger *string `json:"swagger"`
 }
 
 type ChangePasswordRequest struct {
@@ -166,7 +170,7 @@ func TotalPages(total int64, size int) int {
 func UserFrom(u *model.User) User {
 	return User{
 		ID: u.ID, Name: u.Name, Email: u.Email, Username: u.Username, Phone: u.Phone,
-		Avatar: u.Avatar, Github: u.Github, Figma: u.Figma, Role: u.Role,
+		Avatar: u.Avatar, Github: u.Github, Figma: u.Figma, Swagger: u.Swagger, Role: u.Role,
 	}
 }
 

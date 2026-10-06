@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"io"
 	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
+	"iot-backend/internal/apperr"
 	"iot-backend/internal/dto"
 	"iot-backend/internal/middleware"
 	"iot-backend/internal/repository"
@@ -62,7 +64,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 	user, err := h.auth.Register(c.Request.Context(), service.RegisterInput{
-		Username: req.Username, Email: req.Email, Password: req.Password,
+		Name: req.Name, Username: req.Username, Email: req.Email, Password: req.Password,
 	})
 	if err != nil {
 		respondError(c, h.logger, err)
@@ -109,8 +111,48 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	}
 	user, err := h.auth.UpdateProfile(c.Request.Context(), middleware.ClaimsFrom(c).UserID,
 		repository.ProfileUpdate{
-			Name: req.Name, Phone: req.Phone, Avatar: req.Avatar, Github: req.Github, Figma: req.Figma,
+			Name: req.Name, Phone: req.Phone, Avatar: req.Avatar, Github: req.Github,
+			Figma: req.Figma, Swagger: req.Swagger,
 		})
+	if err != nil {
+		respondError(c, h.logger, err)
+		return
+	}
+	c.JSON(http.StatusOK, dto.UserFrom(user))
+}
+
+// UploadAvatar handles POST /api/auth/avatar (multipart form, field "file").
+// @Summary Upload the current user's avatar
+// @Description PNG, JPEG, GIF or WebP up to 2 MB. The returned avatar is a path served by this API, e.g. /uploads/avatars/1-ab12.png.
+// @Tags Auth
+// @Accept mpfd
+// @Produce json
+// @Security BearerAuth
+// @Param file formData file true "Image file"
+// @Success 200 {object} dto.User
+// @Failure 400 {object} dto.ErrorResponse
+// @Failure 401 {object} dto.ErrorResponse
+// @Router /auth/avatar [post]
+func (h *AuthHandler) UploadAvatar(c *gin.Context) {
+	// A little headroom over the image limit for the multipart framing.
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, service.MaxAvatarBytes+(64<<10))
+	file, err := c.FormFile("file")
+	if err != nil {
+		respondError(c, h.logger, apperr.BadRequest("Avatar must be sent as the multipart field \"file\", at most 2 MB"))
+		return
+	}
+	f, err := file.Open()
+	if err != nil {
+		respondError(c, h.logger, apperr.BadRequest("Invalid avatar file"))
+		return
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, service.MaxAvatarBytes+1))
+	if err != nil {
+		respondError(c, h.logger, apperr.BadRequest("Invalid avatar file"))
+		return
+	}
+	user, err := h.auth.UploadAvatar(c.Request.Context(), middleware.ClaimsFrom(c).UserID, data)
 	if err != nil {
 		respondError(c, h.logger, err)
 		return

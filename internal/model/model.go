@@ -146,8 +146,11 @@ type DeviceAction struct {
 	CompletedAt *time.Time
 }
 
-// DeviceActionHistory is a DeviceAction joined with its device's name.
+// DeviceActionHistory is a DeviceAction joined with its device's name and the user who sent the
+// command. User carries only ID, Username, Name and Role, and is nil when the user has since
+// been deleted.
 type DeviceActionHistory struct {
 	DeviceAction
 	DeviceName string
+	User       *User
 }

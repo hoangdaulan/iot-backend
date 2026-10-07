@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime/multipart"
@@ -252,7 +253,7 @@ func TestLogin(t *testing.T) {
 	if token, _ := body["accessToken"].(string); strings.Count(token, ".") != 2 {
 		t.Errorf("accessToken = %v", body["accessToken"])
 	}
-	// The partial user must match the Flutter UserSummary contract exactly.
+	// The partial user must match the Flutter UserInfo contract exactly.
 	if user, _ := json.Marshal(body["user"]); string(user) != `{"id":1,"name":"Administrator","role":"ADMIN","username":"admin"}` {
 		t.Errorf("user = %s", user)
 	}
@@ -779,7 +780,7 @@ func TestDeviceHistory(t *testing.T) {
 		t.Fatalf("page = %s", res.Body)
 	}
 	newest, oldest := page.Content[0], page.Content[1]
-	if newest["action"] != "TURN_OFF" || newest["result"] != "FAILED" || newest["deviceName"] != "LED 1" ||
+	if newest["action"] != "TURN_OFF" || newest["result"] != "FAILED" || newest["deviceName"] != "LED 1" || userOf(newest) != "1/admin/Administrator/ADMIN" ||
 		newest["message"] != "Device failed to turn off" {
 		t.Errorf("newest = %v", newest)
 	}
@@ -865,4 +866,10 @@ func TestCORSPreflight(t *testing.T) {
 	if w.Code != http.StatusNoContent || w.Header().Get("Access-Control-Allow-Origin") != "http://localhost:5555" {
 		t.Errorf("preflight = %d %v", w.Code, w.Header())
 	}
+}
+
+// userOf flattens the "user" object of a history row as id/username/name/role.
+func userOf(item map[string]any) string {
+	u, _ := item["user"].(map[string]any)
+	return fmt.Sprintf("%v/%v/%v/%v", u["id"], u["username"], u["name"], u["role"])
 }

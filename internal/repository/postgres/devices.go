@@ -113,7 +113,7 @@ func (r *DeviceRepository) ActionHistory(
 	if f.Result != nil {
 		add("a.result = $%d", string(*f.Result))
 	}
-	from := ` FROM device_actions a JOIN devices d ON d.id = a.device_id`
+	from := ` FROM device_actions a JOIN devices d ON d.id = a.device_id LEFT JOIN users u ON u.id = a.user_id`
 	if len(where) > 0 {
 		from += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -126,7 +126,7 @@ func (r *DeviceRepository) ActionHistory(
 	args = append(args, f.Limit, f.Offset)
 	rows, err := r.pool.Query(ctx, `
 		SELECT a.id, a.user_id, a.device_id, a.action, a.result, a.message, a.timestamp,
-			a.completed_at, d.name`+from+
+			a.completed_at, d.name, u.id, u.username, u.name, u.role`+from+
 		fmt.Sprintf(` ORDER BY a.timestamp DESC, a.id DESC LIMIT $%d OFFSET $%d`,
 			len(args)-1, len(args)),
 		args...)
@@ -135,8 +135,13 @@ func (r *DeviceRepository) ActionHistory(
 	}
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (model.DeviceActionHistory, error) {
 		var h model.DeviceActionHistory
+		var userID *int64
+		var username, userName, role *string
 		err := row.Scan(&h.ID, &h.UserID, &h.DeviceID, &h.Action, &h.Result, &h.Message,
-			&h.Timestamp, &h.CompletedAt, &h.DeviceName)
+			&h.Timestamp, &h.CompletedAt, &h.DeviceName, &userID, &username, &userName, &role)
+		if userID != nil {
+			h.User = &model.User{ID: *userID, Username: *username, Name: userName, Role: model.Role(*role)}
+		}
 		return h, err
 	})
 	return items, total, err

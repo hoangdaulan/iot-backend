@@ -370,7 +370,13 @@ func (r *DeviceRepository) ActionHistory(
 			(f.To == nil || !a.Timestamp.After(*f.To)) &&
 			(f.Action == nil || a.Action == *f.Action) &&
 			(f.Result == nil || a.Result == *f.Result) {
-			all = append(all, model.DeviceActionHistory{DeviceAction: a, DeviceName: r.s.devices[a.DeviceID].Name})
+			h := model.DeviceActionHistory{DeviceAction: a, DeviceName: r.s.devices[a.DeviceID].Name}
+			for _, u := range r.s.users {
+				if a.UserID != nil && u.ID == *a.UserID {
+					h.User = &model.User{ID: u.ID, Username: u.Username, Name: u.Name, Role: u.Role}
+				}
+			}
+			all = append(all, h)
 		}
 	}
 	sort.SliceStable(all, func(i, j int) bool {

@@ -19,8 +19,8 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
-// UserSummary is the partial user embedded in the login and register responses.
-type UserSummary struct {
+// UserInfo is the partial user embedded in the login and register responses.
+type UserInfo struct {
 	ID       int64      `json:"id"`
 	Username string     `json:"username"`
 	Name     *string    `json:"name,omitempty"`
@@ -28,8 +28,8 @@ type UserSummary struct {
 }
 
 type LoginResponse struct {
-	AccessToken string      `json:"accessToken"`
-	User        UserSummary `json:"user"`
+	AccessToken string   `json:"accessToken"`
+	User        UserInfo `json:"user"`
 }
 
 type RegisterRequest struct {
@@ -41,8 +41,8 @@ type RegisterRequest struct {
 }
 
 type RegisterResponse struct {
-	Message string      `json:"message"`
-	User    UserSummary `json:"user"`
+	Message string   `json:"message"`
+	User    UserInfo `json:"user"`
 }
 
 // User is the full profile; it never includes the password hash.
@@ -138,6 +138,7 @@ type DeviceActionHistoryItem struct {
 	ID         int64               `json:"id"`
 	DeviceID   int64               `json:"deviceId"`
 	DeviceName string              `json:"deviceName"`
+	User       *UserInfo           `json:"user,omitempty"`
 	Action     model.ActionType    `json:"action"`
 	Status     *model.DeviceStatus `json:"status,omitempty"`
 	Result     model.ActionResult  `json:"result"`
@@ -174,8 +175,8 @@ func UserFrom(u *model.User) User {
 	}
 }
 
-func UserSummaryFrom(u *model.User) UserSummary {
-	return UserSummary{ID: u.ID, Username: u.Username, Name: u.Name, Role: u.Role}
+func UserInfoFrom(u *model.User) UserInfo {
+	return UserInfo{ID: u.ID, Username: u.Username, Name: u.Name, Role: u.Role}
 }
 
 func SensorFrom(s model.Sensor) Sensor {
@@ -193,6 +194,10 @@ func HistoryItemFrom(a model.DeviceActionHistory) DeviceActionHistoryItem {
 	item := DeviceActionHistoryItem{
 		ID: a.ID, DeviceID: a.DeviceID, DeviceName: a.DeviceName, Action: a.Action,
 		Result: a.Result, Timestamp: a.Timestamp.UTC(), Message: a.Message,
+	}
+	if a.User != nil {
+		user := UserInfoFrom(a.User)
+		item.User = &user
 	}
 	if a.Result == model.ResultSuccess {
 		status := a.Action.ResultingStatus()

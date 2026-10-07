@@ -44,7 +44,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		respondError(c, h.logger, err)
 		return
 	}
-	c.JSON(http.StatusOK, dto.LoginResponse{AccessToken: token, User: dto.UserSummaryFrom(user)})
+	c.JSON(http.StatusOK, dto.LoginResponse{AccessToken: token, User: dto.UserInfoFrom(user)})
 }
 
 // Register handles POST /api/auth/register.
@@ -71,7 +71,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, dto.RegisterResponse{
-		Message: "Register successfully", User: dto.UserSummaryFrom(user),
+		Message: "Register successfully", User: dto.UserInfoFrom(user),
 	})
 }
 

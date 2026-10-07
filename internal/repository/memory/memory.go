@@ -4,6 +4,7 @@ package memory
 
 import (
 	"context"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -213,7 +214,52 @@ func (r *SensorRepository) History(
 			r.matchesSensor(rd, f) &&
 			r.matchesAny(rd, f.Any)
 	})
+	if f.Bucket > 0 {
+		all = bucketReadings(all, f.Bucket)
+	}
 	return page(all, f.Offset, f.Limit), int64(len(all)), nil
+}
+
+// bucketReadings averages newest-first readings per sensor over windows of d, like the SQL
+// version: the id is the smallest of the window and the timestamp its start.
+func bucketReadings(all []model.SensorReading, d time.Duration) []model.SensorReading {
+	type key struct {
+		sensor int64
+		start  int64
+	}
+	groups := map[key]*model.SensorReading{}
+	counts := map[key]int{}
+	sums := map[key]float64{}
+	var order []key
+	for _, r := range all {
+		k := key{r.SensorID, r.Timestamp.Truncate(d).UnixNano()}
+		g, ok := groups[k]
+		if !ok {
+			copied := r
+			copied.Timestamp = r.Timestamp.Truncate(d)
+			groups[k] = &copied
+			order = append(order, k)
+			g = &copied
+		}
+		if r.ID < g.ID {
+			g.ID = r.ID
+		}
+		counts[k]++
+		sums[k] += r.Value
+	}
+	out := make([]model.SensorReading, 0, len(order))
+	for _, k := range order {
+		g := *groups[k]
+		g.Value = math.Round(sums[k]/float64(counts[k])*100) / 100
+		out = append(out, g)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].Timestamp.Equal(out[j].Timestamp) {
+			return out[i].Timestamp.After(out[j].Timestamp)
+		}
+		return out[i].SensorID < out[j].SensorID
+	})
+	return out
 }
 
 // matchesSensor reports whether the reading's sensor matches the name/id search of f.

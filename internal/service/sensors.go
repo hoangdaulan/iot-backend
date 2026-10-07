@@ -62,6 +62,9 @@ type HistoryQuery struct {
 	Type     *model.SensorType
 	From, To *time.Time
 	Value    *float64
+	// Bucket, when set, averages each sensor's readings over windows of this length (a whole
+	// number of minutes, 1 minute to 24 hours).
+	Bucket time.Duration
 	// Filter selects what Query searches: FilterAll, FilterSensor (sensor id or name), a sensor
 	// type (measured value) or FilterTime (yyyy/MM/dd HH:mm:ss prefix). Empty means FilterAll.
 	Filter string
@@ -80,6 +83,9 @@ func (q *HistoryQuery) Validate() error {
 	if q.Page < 0 || q.Size < 1 || q.Size > MaxPageSize {
 		return apperr.BadRequest(fmt.Sprintf("Invalid query parameters: page must be >= 0 and size 1-%d", MaxPageSize))
 	}
+	if q.Bucket != 0 && (q.Bucket < time.Minute || q.Bucket > 24*time.Hour || q.Bucket%time.Minute != 0) {
+		return apperr.BadRequest("Invalid query parameters: bucket must be a whole number of minutes from 1m to 24h")
+	}
 	if q.From != nil && q.To != nil && q.From.After(*q.To) {
 		return apperr.BadRequest("Invalid query parameters: time range start is after its end")
 	}
@@ -94,7 +100,7 @@ func (s *SensorService) History(ctx context.Context, q HistoryQuery) ([]model.Se
 		return nil, 0, apperr.BadRequest("Invalid query parameters: type must be temperature, humidity or light")
 	}
 	filter := repository.SensorHistoryFilter{
-		Type: q.Type, From: q.From, To: q.To, Value: q.Value,
+		Type: q.Type, From: q.From, To: q.To, Value: q.Value, Bucket: q.Bucket,
 		Offset: q.Page * q.Size, Limit: q.Size,
 	}
 	if err := q.applySearch(&filter); err != nil {

@@ -596,6 +596,71 @@ func TestSensorHistory(t *testing.T) {
 
 // ── Devices ──
 
+func TestSensorHistoryBucket(t *testing.T) {
+	h := newHarness(t)
+	token := h.login("admin")
+	base := time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)
+	// Temperature 20 and 22 share the 10:00 window, 24 is alone in the 10:05 window.
+	for _, r := range []struct {
+		at   time.Duration
+		temp float64
+	}{{10 * time.Second, 20}, {2 * time.Minute, 22}, {7 * time.Minute, 24}} {
+		h.ingest(base.Add(r.at), map[model.SensorType]float64{"temperature": r.temp, "light": r.temp * 10})
+	}
+
+	type entry struct {
+		Value     float64
+		Timestamp time.Time
+	}
+	var body struct {
+		Data          map[string][]entry
+		TotalElements int64
+	}
+	get := func(query string) response {
+		res := h.do(http.MethodGet, "/api/sensor-data/history"+query, token, nil)
+		_ = json.Unmarshal(res.Body, &body)
+		return res
+	}
+
+	expect(t, get("?bucket=5m&type=temperature"), http.StatusOK, "")
+	temps := body.Data["temperature"]
+	if body.TotalElements != 2 || len(temps) != 2 {
+		t.Fatalf("buckets = %+v (total %d)", temps, body.TotalElements)
+	}
+	if !temps[0].Timestamp.Equal(base.Add(5*time.Minute)) || temps[0].Value != 24 ||
+		!temps[1].Timestamp.Equal(base) || temps[1].Value != 21 {
+		t.Errorf("newest first, window start, average: %+v", temps)
+	}
+
+	t.Run("buckets every sensor separately", func(t *testing.T) {
+		expect(t, get("?bucket=5m"), http.StatusOK, "")
+		if body.TotalElements != 4 || len(body.Data["light"]) != 2 || body.Data["light"][1].Value != 210 {
+			t.Errorf("total %d, light %+v", body.TotalElements, body.Data["light"])
+		}
+	})
+	t.Run("a wider window merges them and pages count windows", func(t *testing.T) {
+		expect(t, get("?bucket=10m&type=temperature"), http.StatusOK, "")
+		if body.TotalElements != 1 || body.Data["temperature"][0].Value != 22 {
+			t.Errorf("total %d, %+v", body.TotalElements, body.Data["temperature"])
+		}
+		expect(t, get("?bucket=5m&type=temperature&size=1&page=1"), http.StatusOK, "")
+		if len(body.Data["temperature"]) != 1 || body.Data["temperature"][0].Value != 21 {
+			t.Errorf("page 1 = %+v", body.Data["temperature"])
+		}
+	})
+	t.Run("respects the time range", func(t *testing.T) {
+		expect(t, get("?bucket=5m&type=temperature&timeRange=2026-10-06T10:05:00Z/.."), http.StatusOK, "")
+		if body.TotalElements != 1 {
+			t.Errorf("total = %d", body.TotalElements)
+		}
+	})
+	for _, query := range []string{"?bucket=30s", "?bucket=90s", "?bucket=25h", "?bucket=abc", "?bucket=-5m"} {
+		t.Run("rejects "+query, func(t *testing.T) {
+			expect(t, h.do(http.MethodGet, "/api/sensor-data/history"+query, token, nil), http.StatusBadRequest, "")
+		})
+	}
+}
+
 func TestSensorHistoryValueSearch(t *testing.T) {
 	h := newHarness(t)
 	token := h.login("admin")

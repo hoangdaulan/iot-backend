@@ -193,6 +193,62 @@ func TestPostgresAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("history buckets and searches in SQL", func(t *testing.T) {
+		var b historyBody
+		get := func(query string) {
+			t.Helper()
+			res := h.do(http.MethodGet, "/api/sensor-data/history"+query, token, nil)
+			expect(t, res, http.StatusOK, "")
+			b = historyBody{}
+			_ = json.Unmarshal(res.Body, &b)
+		}
+
+		// The 31.5 row ingested above, alone in its 5-minute window.
+		future := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+		window := future.Truncate(5 * time.Minute)
+		get("?bucket=5m&type=temperature&timeRange=" + future.Add(-time.Minute).Format(time.RFC3339) + "/..")
+		if b.TotalElements != 1 || b.Data["temperature"][0].Value != 31.5 {
+			t.Errorf("bucket of the newest row: %+v", b)
+		}
+		var raw struct {
+			Data map[string][]struct{ Timestamp time.Time }
+		}
+		res := h.do(http.MethodGet, "/api/sensor-data/history?bucket=5m&type=temperature&size=1", token, nil)
+		_ = json.Unmarshal(res.Body, &raw)
+		if got := raw.Data["temperature"][0].Timestamp; !got.Equal(window) {
+			t.Errorf("window start = %v, want %v", got, window)
+		}
+
+		// A week of 10-minute readings averaged by the hour: one window per sensor and hour.
+		want := count(t, pool, `SELECT count(*) FROM (SELECT 1 FROM sensor_data d JOIN sensors s ON s.id = d.sensor_id
+			WHERE s.type = 'humidity' GROUP BY s.id, floor(extract(epoch FROM d.timestamp) / 3600)) g`)
+		get("?bucket=1h&type=humidity&size=5000")
+		if b.TotalElements != want {
+			t.Errorf("hourly humidity windows = %d, want %d", b.TotalElements, want)
+		}
+
+		// Searches agree with plain SQL over the same rows.
+		get("?filter=sensor&q=hum&size=1")
+		if want := count(t, pool, `SELECT count(*) FROM sensor_data d JOIN sensors s ON s.id = d.sensor_id WHERE s.type = 'humidity'`); b.TotalElements != want {
+			t.Errorf("sensor name search = %d, want %d", b.TotalElements, want)
+		}
+		get("?filter=temperature&q=31&size=1")
+		if want := count(t, pool, `SELECT count(*) FROM sensor_data d JOIN sensors s ON s.id = d.sensor_id
+			WHERE s.type = 'temperature' AND d.value >= 31 AND d.value < 32`); b.TotalElements != want || want == 0 {
+			t.Errorf("value search = %d, want %d", b.TotalElements, want)
+		}
+		get("?filter=time&q=" + future.Format("2006/01/02") + "&utcOffset=0&size=1")
+		if want := count(t, pool, `SELECT count(*) FROM sensor_data WHERE timestamp >= $1 AND timestamp < $2`,
+			future.Truncate(24*time.Hour), future.Truncate(24*time.Hour).Add(24*time.Hour)); b.TotalElements != want {
+			t.Errorf("time search = %d, want %d", b.TotalElements, want)
+		}
+		get("?filter=all&q=31&size=1")
+		if want := count(t, pool, `SELECT count(*) FROM sensor_data d JOIN sensors s ON s.id = d.sensor_id
+			WHERE s.id = 31 OR s.name ILIKE '%31%' OR (d.value >= 31 AND d.value < 32)`); b.TotalElements != want {
+			t.Errorf("union search = %d, want %d", b.TotalElements, want)
+		}
+	})
+
 	t.Run("command persists the action and the device status", func(t *testing.T) {
 		res := h.do(http.MethodPost, "/api/devices/1/command", token, `{"command":"ON"}`)
 		expect(t, res, http.StatusOK, "Device turned on successfully")

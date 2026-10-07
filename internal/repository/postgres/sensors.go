@@ -142,6 +142,10 @@ func (r *SensorRepository) History(
 		from += " WHERE " + strings.Join(where, " AND ")
 	}
 
+	if f.Bucket > 0 {
+		return r.bucketedHistory(ctx, from, args, f)
+	}
+
 	var total int64
 	if err := r.pool.QueryRow(ctx, `SELECT count(*)`+from, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count sensor history: %w", err)
@@ -155,6 +159,34 @@ func (r *SensorRepository) History(
 		args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("sensor history: %w", err)
+	}
+	readings, err := pgx.CollectRows(rows, scanReading)
+	return readings, total, err
+}
+
+// bucketedHistory answers History with one averaged row per sensor and time window. The id is the
+// smallest id of the window's readings and the timestamp is the window start. from is the
+// FROM/WHERE clause already built for args.
+func (r *SensorRepository) bucketedHistory(
+	ctx context.Context, from string, args []any, f repository.SensorHistoryFilter,
+) ([]model.SensorReading, int64, error) {
+	args = append(args, f.Bucket.Seconds())
+	secs := fmt.Sprintf("$%d::double precision", len(args))
+	grouped := `SELECT min(d.id) AS id, s.id AS sensor_id,
+			round(avg(d.value)::numeric, 2)::double precision AS value,
+			to_timestamp(floor(extract(epoch FROM d.timestamp)::double precision / ` + secs + `) * ` + secs + `) AS bucket,
+			s.type, s.unit` + from + ` GROUP BY s.id, s.type, s.unit, bucket`
+
+	var total int64
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM (`+grouped+`) g`, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count bucketed sensor history: %w", err)
+	}
+	args = append(args, f.Limit, f.Offset)
+	rows, err := r.pool.Query(ctx,
+		grouped+fmt.Sprintf(` ORDER BY bucket DESC, s.id LIMIT $%d OFFSET $%d`, len(args)-1, len(args)),
+		args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("bucketed sensor history: %w", err)
 	}
 	readings, err := pgx.CollectRows(rows, scanReading)
 	return readings, total, err

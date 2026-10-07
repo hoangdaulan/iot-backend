@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -72,7 +73,7 @@ func (h *SensorHandler) Latest(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.LatestSensorDataResponse{Data: data, DeviceStatus: status, Devices: summaries})
 }
 
-// History handles GET /api/sensor-data/history?type=&timeRange=&value=&filter=&q=&utcOffset=&page=&size=.
+// History handles GET /api/sensor-data/history?type=&timeRange=&value=&bucket=&filter=&q=&utcOffset=&page=&size=.
 // @Summary Sensor reading history
 // @Tags Sensors
 // @Produce json
@@ -80,6 +81,7 @@ func (h *SensorHandler) Latest(c *gin.Context) {
 // @Param type query string false "Sensor type"
 // @Param timeRange query string false "ISO-8601 interval <from>/<to>; '..' or empty means open-ended"
 // @Param value query number false "Exact value filter"
+// @Param bucket query string false "Average each sensor over windows of this length, e.g. 5m (whole minutes, 1m to 24h); each entry is then a window, stamped with its start"
 // @Param filter query string false "What q searches: all (any of sensor, value or time), sensor (id or name), temperature, humidity, light (value starting with q, e.g. 28 = 28.0-28.99) or time (yyyy/MM/dd HH:mm:ss prefix)"
 // @Param q query string false "Search text for filter; empty means no search"
 // @Param utcOffset query int false "Client offset east of UTC in minutes, used to read a time search (default 0)"
@@ -134,6 +136,13 @@ func parseSensorHistoryQuery(c *gin.Context) (service.HistoryQuery, error) {
 			return q, apperr.BadRequest("Invalid query parameters: value must be a number")
 		}
 		q.Value = &v
+	}
+	if raw := c.Query("bucket"); raw != "" {
+		d, err := time.ParseDuration(raw)
+		if err != nil {
+			return q, apperr.BadRequest("Invalid query parameters: bucket must be a duration such as 5m")
+		}
+		q.Bucket = d
 	}
 	q.Filter = c.Query("filter")
 	q.Query = c.Query("q")

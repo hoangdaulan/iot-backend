@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"iot-backend/internal/model"
+	"iot-backend/internal/vntime"
 )
 
 type ErrorResponse struct {
@@ -184,18 +185,18 @@ func UserInfoFrom(u *model.User) UserInfo {
 func SensorFrom(s model.Sensor) Sensor {
 	return Sensor{
 		ID: s.ID, Name: s.Name, Type: s.Type, Unit: s.Unit, Status: s.Status,
-		MQTTTopic: s.MQTTTopic, CreatedAt: s.CreatedAt.UTC(), UpdatedAt: s.UpdatedAt.UTC(),
+		MQTTTopic: s.MQTTTopic, CreatedAt: s.CreatedAt.In(vntime.Loc), UpdatedAt: s.UpdatedAt.In(vntime.Loc),
 	}
 }
 
 func SensorDataEntryFrom(r model.SensorReading) SensorDataEntry {
-	return SensorDataEntry{ID: r.ID, Value: r.Value, Unit: r.Unit, Timestamp: r.Timestamp.UTC()}
+	return SensorDataEntry{ID: r.ID, Value: r.Value, Unit: r.Unit, Timestamp: r.Timestamp.In(vntime.Loc)}
 }
 
 func HistoryItemFrom(a model.DeviceActionHistory) DeviceActionHistoryItem {
 	item := DeviceActionHistoryItem{
 		ID: a.ID, DeviceID: a.DeviceID, DeviceName: a.DeviceName, Action: a.Action,
-		Result: a.Result, Timestamp: a.Timestamp.UTC(), Message: a.Message,
+		Result: a.Result, Timestamp: a.Timestamp.In(vntime.Loc), Message: a.Message,
 	}
 	if a.User != nil {
 		user := UserInfoFrom(a.User)

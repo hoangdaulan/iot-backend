@@ -73,18 +73,18 @@ func (h *SensorHandler) Latest(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.LatestSensorDataResponse{Data: data, DeviceStatus: status, Devices: summaries})
 }
 
-// History handles GET /api/sensor-data/history?type=&timeRange=&value=&bucket=&filter=&q=&utcOffset=&page=&size=.
+// History handles GET /api/sensor-data/history?type=&startTime=&endTime=&value=&bucket=&filter=&q=&page=&size=.
 // @Summary Sensor reading history
 // @Tags Sensors
 // @Produce json
 // @Security BearerAuth
 // @Param type query string false "Sensor type"
-// @Param timeRange query string false "ISO-8601 interval <from>/<to>; '..' or empty means open-ended"
+// @Param startTime query string false "Start of the time range, e.g. 2026-10-14T00:00:00+07:00; a time without a zone is read as Vietnam time (UTC+7); empty means no lower bound"
+// @Param endTime query string false "End of the time range, same format as startTime; empty means no upper bound"
 // @Param value query number false "Exact value filter"
 // @Param bucket query string false "Take the maximum of each sensor over windows of this length, e.g. 5m (whole minutes, 1m to 24h); each entry is then a window, stamped with its start"
 // @Param filter query string false "What q searches: all (any of sensor, value or time), sensor (id or name), temperature, humidity, light (value starting with q, e.g. 28 = 28.0-28.99) or time (yyyy/MM/dd HH:mm:ss prefix)"
 // @Param q query string false "Search text for filter; empty means no search"
-// @Param utcOffset query int false "Client offset east of UTC in minutes, used to read a time search (default 0)"
 // @Param page query int false "0-based page"
 // @Param size query int false "Page size"
 // @Success 200 {object} dto.SensorHistoryResponse
@@ -123,12 +123,12 @@ func parseSensorHistoryQuery(c *gin.Context) (service.HistoryQuery, error) {
 		t := model.SensorType(raw)
 		q.Type = &t
 	}
-	if raw := c.Query("timeRange"); raw != "" {
-		from, to, err := parseTimeRange(raw)
-		if err != nil {
-			return q, err
-		}
-		q.From, q.To = from, to
+	var err error
+	if q.From, err = queryTime(c, "startTime"); err != nil {
+		return q, err
+	}
+	if q.To, err = queryTime(c, "endTime"); err != nil {
+		return q, err
 	}
 	if raw := c.Query("value"); raw != "" {
 		v, err := strconv.ParseFloat(raw, 64)
@@ -146,10 +146,6 @@ func parseSensorHistoryQuery(c *gin.Context) (service.HistoryQuery, error) {
 	}
 	q.Filter = c.Query("filter")
 	q.Query = c.Query("q")
-	var err error
-	if q.UtcOffsetMinutes, err = queryInt(c, "utcOffset"); err != nil {
-		return q, err
-	}
 	if q.Page, err = queryInt(c, "page"); err != nil {
 		return q, err
 	}

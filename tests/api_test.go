@@ -26,6 +26,7 @@ import (
 	"iot-backend/internal/repository/memory"
 	"iot-backend/internal/router"
 	"iot-backend/internal/service"
+	"iot-backend/internal/vntime"
 )
 
 // fakeESP32 answers published commands the way the test configures.
@@ -510,12 +511,12 @@ func TestSensorHistory(t *testing.T) {
 			t.Error("all type keys are always present")
 		}
 	})
-	t.Run("filters by timeRange", func(t *testing.T) {
-		b := get("?timeRange=2026-08-15T00:00:00Z/..")
+	t.Run("filters by startTime and endTime", func(t *testing.T) {
+		b := get("?startTime=2026-08-15T00:00:00Z")
 		if b.TotalElements != 6 {
 			t.Errorf("open end: total = %d", b.TotalElements)
 		}
-		b = get("?type=temperature&timeRange=2026-08-14T00:00:00Z/2026-08-15T00:00:00Z")
+		b = get("?type=temperature&startTime=2026-08-14T00:00:00Z&endTime=2026-08-15T00:00:00Z")
 		if b.TotalElements != 2 {
 			t.Errorf("closed range: total = %d", b.TotalElements)
 		}
@@ -542,7 +543,7 @@ func TestSensorHistory(t *testing.T) {
 			{"?filter=all&q=400", 3},
 			{"?filter=all&q=2026", 9},
 			{"?filter=all&q=2026/08/15", 3},
-			{"?filter=all&q=2026/08/15%2007&utcOffset=420", 3},
+			{"?filter=all&q=2026/08/15%2007", 3},
 			{"?filter=sensor&q=hum", 3},
 			{"?filter=sensor&q=3", 3},
 			{"?filter=sensor&q=", 9},
@@ -561,18 +562,17 @@ func TestSensorHistory(t *testing.T) {
 			{"?filter=time&q=2026", 9},
 			{"?filter=time&q=2026/08", 9},
 			{"?filter=time&q=2026/08/15", 3},
-			{"?filter=time&q=2026/08/15%2000", 3},
+			{"?filter=time&q=2026/08/15%2000", 0},
 			{"?filter=time&q=2026/08/15%2001", 0},
-			{"?filter=time&q=2026/08/15%2000:00:00", 3},
-			{"?filter=time&q=2026/08/15%2000:00:01", 0},
-			{"?filter=time&q=2026/08/15%2007&utcOffset=420", 3},
-			{"?filter=time&q=2026/08/15&utcOffset=420", 3},
-			{"?filter=time&q=2026/08/14&utcOffset=420", 3},
-			{"?filter=time&q=2026/08/15&utcOffset=-60", 3},
-			{"?filter=time&q=2026/08/16&utcOffset=-60", 0},
+			{"?filter=time&q=2026/08/15%2007:00:00", 3},
+			{"?filter=time&q=2026/08/15%2007:00:01", 0},
+			{"?filter=time&q=2026/08/15%2007", 3},
+			{"?filter=time&q=2026/08/15", 3},
+			{"?filter=time&q=2026/08/14", 3},
+			{"?filter=time&q=2026/08/17", 0},
 			{"?filter=time&q=2026-08-15", 3},
 			{"?filter=time&q=", 9},
-			{"?filter=time&q=2026/08/14&timeRange=2026-08-14T12:00:00Z/..", 0},
+			{"?filter=time&q=2026/08/14&startTime=2026-08-14T12:00:00Z", 0},
 		}
 		for _, tc := range cases {
 			if b := get(tc.query); b.TotalElements != tc.total {
@@ -591,8 +591,8 @@ func TestSensorHistory(t *testing.T) {
 		}
 	})
 	for _, query := range []string{"?type=co2", "?size=5001", "?page=-1", "?page=x",
-		"?timeRange=yesterday", "?filter=co2", "?filter=temperature&q=abc", "?filter=time&q=tomorrow",
-		"?filter=time&q=2026/13", "?filter=time&q=2026/02/30", "?filter=time&q=2026/08/15%2025", "?utcOffset=x", "?timeRange=2026-08-15T00:00:00Z/2026-08-14T00:00:00Z", "?value=abc"} {
+		"?startTime=yesterday", "?filter=co2", "?filter=temperature&q=abc", "?filter=time&q=tomorrow",
+		"?filter=time&q=2026/13", "?filter=time&q=2026/02/30", "?filter=time&q=2026/08/15%2025", "?startTime=2026-08-15T00:00:00Z&endTime=2026-08-14T00:00:00Z", "?value=abc"} {
 		t.Run("rejects "+query, func(t *testing.T) {
 			expect(t, h.do(http.MethodGet, "/api/sensor-data/history"+query, token, nil), http.StatusBadRequest, "")
 		})
@@ -654,7 +654,7 @@ func TestSensorHistoryBucket(t *testing.T) {
 		}
 	})
 	t.Run("respects the time range", func(t *testing.T) {
-		expect(t, get("?bucket=5m&type=temperature&timeRange=2026-10-06T10:05:00Z/.."), http.StatusOK, "")
+		expect(t, get("?bucket=5m&type=temperature&startTime=2026-10-06T10:05:00Z"), http.StatusOK, "")
 		if body.TotalElements != 1 {
 			t.Errorf("total = %d", body.TotalElements)
 		}
@@ -805,11 +805,11 @@ func TestDeviceHistory(t *testing.T) {
 			t.Errorf("page 1 = %+v", p)
 		}
 		future := time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
-		_ = json.Unmarshal(h.do(http.MethodGet, "/api/devices/control-history?from="+future, token, nil).Body, &p)
+		_ = json.Unmarshal(h.do(http.MethodGet, "/api/devices/control-history?startTime="+future, token, nil).Body, &p)
 		if len(p.Content) != 0 {
 			t.Errorf("future window = %+v", p)
 		}
-		expect(t, h.do(http.MethodGet, "/api/devices/control-history?from=bad", token, nil), http.StatusBadRequest, "")
+		expect(t, h.do(http.MethodGet, "/api/devices/control-history?startTime=bad", token, nil), http.StatusBadRequest, "")
 	})
 }
 
@@ -821,6 +821,7 @@ func TestDeviceHistorySearch(t *testing.T) {
 	h.esp.answer(model.ResultFailed, "")
 	h.do(http.MethodPost, "/api/devices/1/command", token, `{"command":"OFF"}`)
 	now := time.Now().UTC()
+	vn := now.In(vntime.Loc)
 
 	total := func(query string) int64 {
 		t.Helper()
@@ -844,18 +845,18 @@ func TestDeviceHistorySearch(t *testing.T) {
 		{"?result=FAILED", 1},
 		{"?result=TIMEOUT", 0},
 		{"?deviceId=1&action=TURN_ON&result=SUCCESS", 1},
-		{"?q=" + now.Format("2006"), 3},
-		{"?q=" + now.Format("2006/01/02"), 3},
-		{"?q=" + now.Format("2006/01/02") + "%20" + now.Format("15") + "&utcOffset=0", 3},
-		{"?q=" + now.Add(-48*time.Hour).Format("2006/01/02"), 0},
-		{"?q=" + now.Format("2006/01/02") + "&deviceId=2", 1},
+		{"?q=" + vn.Format("2006"), 3},
+		{"?q=" + vn.Format("2006/01/02"), 3},
+		{"?q=" + vn.Format("2006/01/02") + "%20" + vn.Format("15"), 3},
+		{"?q=" + vn.Add(-48*time.Hour).Format("2006/01/02"), 0},
+		{"?q=" + vn.Format("2006/01/02") + "&deviceId=2", 1},
 		{"?q=", 3},
 	} {
 		if got := total(tc.query); got != tc.want {
 			t.Errorf("%s: total = %d, want %d", tc.query, got, tc.want)
 		}
 	}
-	for _, query := range []string{"?action=BLINK", "?result=DONE", "?utcOffset=x", "?q=led", "?q=2026/13"} {
+	for _, query := range []string{"?action=BLINK", "?result=DONE", "?q=led", "?q=2026/13"} {
 		expect(t, h.do(http.MethodGet, "/api/devices/control-history"+query, token, nil), http.StatusBadRequest, "")
 	}
 }
@@ -876,4 +877,38 @@ func TestCORSPreflight(t *testing.T) {
 func userOf(item map[string]any) string {
 	u, _ := item["user"].(map[string]any)
 	return fmt.Sprintf("%v/%v/%v/%v", u["id"], u["username"], u["name"], u["role"])
+}
+
+func TestSensorHistoryUsesVietnamTime(t *testing.T) {
+	h := newHarness(t)
+	token := h.login("admin")
+	// 10:00 UTC is 17:00 in Vietnam.
+	h.ingest(time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), map[model.SensorType]float64{"temperature": 25})
+
+	total := func(query string) (int64, response) {
+		res := h.do(http.MethodGet, "/api/sensor-data/history"+query, token, nil)
+		var body struct{ TotalElements int64 }
+		_ = json.Unmarshal(res.Body, &body)
+		return body.TotalElements, res
+	}
+
+	if !strings.Contains(string(h.do(http.MethodGet, "/api/sensor-data/history?type=temperature", token, nil).Body), `"timestamp":"2026-10-06T17:00:00+07:00"`) {
+		t.Error("timestamps are written in UTC+7")
+	}
+	for query, want := range map[string]int64{
+		"?startTime=2026-10-06T17:00:00":         1, // no zone: Vietnam time
+		"?startTime=2026-10-06T17:00:01":         0,
+		"?endTime=2026-10-06T16:59:59":           0,
+		"?endTime=2026-10-06T17:00:00":           1,
+		"?startTime=2026-10-06T10:00:00Z":        1, // an explicit zone is kept
+		"?startTime=2026-10-06T17:00:00%2B07:00": 1,
+		"?startTime=2026-10-06":                  1, // a date: 00:00 Vietnam time
+		"?startTime=2026-10-07":                  0,
+		"?filter=time&q=2026/10/06%2017":         1, // time searches are read in UTC+7 too
+		"?filter=time&q=2026/10/06%2010":         0,
+	} {
+		if got, res := total(query); got != want {
+			t.Errorf("%s: total = %d, want %d (%s)", query, got, want, res.Body)
+		}
+	}
 }

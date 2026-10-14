@@ -13,6 +13,7 @@ import (
 	"iot-backend/internal/apperr"
 	"iot-backend/internal/model"
 	"iot-backend/internal/repository"
+	"iot-backend/internal/vntime"
 )
 
 const (
@@ -69,10 +70,8 @@ type HistoryQuery struct {
 	// type (measured value) or FilterTime (yyyy/MM/dd HH:mm:ss prefix). Empty means FilterAll.
 	Filter string
 	Query  string
-	// UtcOffsetMinutes is the client's offset east of UTC, used to read a FilterTime query.
-	UtcOffsetMinutes int
-	Page             int
-	Size             int
+	Page   int
+	Size   int
 }
 
 // Validate checks paging and the time range, applying the default page size.
@@ -130,7 +129,7 @@ func (q *HistoryQuery) applySearch(f *repository.SensorHistoryFilter) error {
 		if query == "" {
 			return nil
 		}
-		from, to, err := parseTimePrefix(query, q.UtcOffsetMinutes)
+		from, to, err := parseTimePrefix(query)
 		if err != nil {
 			return err
 		}
@@ -161,7 +160,7 @@ func (q *HistoryQuery) anyOf(query string) *repository.SensorAnyOf {
 	if from, to, err := valueRange(query); err == nil {
 		any.ValueFrom, any.ValueTo = &from, &to
 	}
-	if from, to, err := parseTimePrefix(query, q.UtcOffsetMinutes); err == nil {
+	if from, to, err := parseTimePrefix(query); err == nil {
 		any.From, any.To = from, to
 	}
 	return any
@@ -203,9 +202,9 @@ func valueRange(query string) (from, to float64, err error) {
 var timePrefixPattern = regexp.MustCompile(
 	`^(\d{4})(?:[/-](\d{1,2})(?:[/-](\d{1,2})(?:[ T](\d{1,2})(?::(\d{1,2})(?::(\d{1,2}))?)?)?)?)?$`)
 
-// parseTimePrefix reads yyyy[/MM[/dd[ HH[:mm[:ss]]]]] as the whole period it names, in the
-// client's time zone: "2026/10/06 11" is 11:00:00 through 11:59:59 on 6 October 2026.
-func parseTimePrefix(query string, utcOffsetMinutes int) (from, to *time.Time, err error) {
+// parseTimePrefix reads yyyy[/MM[/dd[ HH[:mm[:ss]]]]] as the whole period it names, in
+// Vietnam time (UTC+7): "2026/10/06 11" is 11:00:00 through 11:59:59 on 6 October 2026.
+func parseTimePrefix(query string) (from, to *time.Time, err error) {
 	invalid := apperr.BadRequest("Invalid query parameters: q must be yyyy/MM/dd HH:mm:ss, or a leading part of it")
 	m := timePrefixPattern.FindStringSubmatch(query)
 	if m == nil {
@@ -221,7 +220,7 @@ func parseTimePrefix(query string, utcOffsetMinutes int) (from, to *time.Time, e
 			given = i + 1
 		}
 	}
-	loc := time.FixedZone("client", utcOffsetMinutes*60)
+	loc := vntime.Loc
 	start := time.Date(parts[0], time.Month(max(parts[1], 1)), max(parts[2], 1),
 		max(parts[3], 0), max(parts[4], 0), max(parts[5], 0), 0, loc)
 	// Date normalizes out-of-range parts (month 13, day 32...), which must be rejected instead.

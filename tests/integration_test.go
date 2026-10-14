@@ -30,6 +30,7 @@ import (
 	"iot-backend/internal/repository/postgres"
 	"iot-backend/internal/router"
 	"iot-backend/internal/service"
+	"iot-backend/internal/vntime"
 	"iot-backend/migrations"
 	"iot-backend/seeds"
 )
@@ -183,7 +184,7 @@ func TestPostgresAPI(t *testing.T) {
 			t.Errorf("newest first: %v", b.Data["temperature"][0])
 		}
 		from := time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
-		_ = json.Unmarshal(h.do(http.MethodGet, "/api/sensor-data/history?timeRange="+from+"/..&size=5000", token, nil).Body, &b)
+		_ = json.Unmarshal(h.do(http.MethodGet, "/api/sensor-data/history?startTime="+from+"&size=5000", token, nil).Body, &b)
 		if b.TotalElements < 3*12 || b.TotalElements > 3*14+2 {
 			t.Errorf("last 2 hours: total = %d", b.TotalElements)
 		}
@@ -206,7 +207,7 @@ func TestPostgresAPI(t *testing.T) {
 		// The 31.5 row ingested above, alone in its 5-minute window.
 		future := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
 		window := future.Truncate(5 * time.Minute)
-		get("?bucket=5m&type=temperature&timeRange=" + future.Add(-time.Minute).Format(time.RFC3339) + "/..")
+		get("?bucket=5m&type=temperature&startTime=" + future.Add(-time.Minute).Format(time.RFC3339))
 		if b.TotalElements != 1 || b.Data["temperature"][0].Value != 31.5 {
 			t.Errorf("bucket of the newest row: %+v", b)
 		}
@@ -237,9 +238,10 @@ func TestPostgresAPI(t *testing.T) {
 			WHERE s.type = 'temperature' AND d.value >= 31 AND d.value < 32`); b.TotalElements != want || want == 0 {
 			t.Errorf("value search = %d, want %d", b.TotalElements, want)
 		}
-		get("?filter=time&q=" + future.Format("2006/01/02") + "&utcOffset=0&size=1")
+		get("?filter=time&q=" + future.In(vntime.Loc).Format("2006/01/02") + "&size=1")
+		day := time.Date(future.In(vntime.Loc).Year(), future.In(vntime.Loc).Month(), future.In(vntime.Loc).Day(), 0, 0, 0, 0, vntime.Loc)
 		if want := count(t, pool, `SELECT count(*) FROM sensor_data WHERE timestamp >= $1 AND timestamp < $2`,
-			future.Truncate(24*time.Hour), future.Truncate(24*time.Hour).Add(24*time.Hour)); b.TotalElements != want {
+			day, day.Add(24*time.Hour)); b.TotalElements != want {
 			t.Errorf("time search = %d, want %d", b.TotalElements, want)
 		}
 		get("?filter=all&q=31&size=1")
@@ -281,7 +283,7 @@ func TestPostgresAPI(t *testing.T) {
 			t.Errorf("second = %v", second)
 		}
 		from := time.Now().Add(-time.Minute).UTC().Format(time.RFC3339)
-		_ = json.Unmarshal(h.do(http.MethodGet, "/api/devices/control-history?deviceId=1&from="+from, token, nil).Body, &page)
+		_ = json.Unmarshal(h.do(http.MethodGet, "/api/devices/control-history?deviceId=1&startTime="+from, token, nil).Body, &page)
 		if page.TotalElements != 2 {
 			t.Errorf("recent actions = %d", page.TotalElements)
 		}

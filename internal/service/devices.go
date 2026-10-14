@@ -171,12 +171,11 @@ type ActionHistoryQuery struct {
 	Action   *model.ActionType
 	Result   *model.ActionResult
 	From, To *time.Time
-	// Query is a leading part of yyyy/MM/dd HH:mm:ss, read at UtcOffsetMinutes east of UTC, and
-	// keeps the actions inside that period; empty means no search.
-	Query            string
-	UtcOffsetMinutes int
-	Page             int
-	Size             int
+	// Query is a leading part of yyyy/MM/dd HH:mm:ss, read in Vietnam time (UTC+7), and keeps
+	// the actions inside that period; empty means no search.
+	Query string
+	Page  int
+	Size  int
 }
 
 func (s *DeviceService) History(
@@ -201,7 +200,7 @@ func (s *DeviceService) History(
 		Offset: paging.Page * paging.Size, Limit: paging.Size,
 	}
 	if query := strings.TrimSpace(q.Query); query != "" {
-		from, to, err := parseTimePrefix(query, q.UtcOffsetMinutes)
+		from, to, err := parseTimePrefix(query)
 		if err != nil {
 			return nil, 0, err
 		}

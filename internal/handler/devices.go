@@ -86,7 +86,7 @@ func (h *DeviceHandler) Command(c *gin.Context) {
 	})
 }
 
-// History handles GET /api/devices/control-history?deviceId=&action=&result=&q=&utcOffset=&from=&to=&page=&size=.
+// History handles GET /api/devices/control-history?deviceId=&action=&result=&q=&startTime=&endTime=&page=&size=.
 // @Summary Device control history
 // @Tags Devices
 // @Produce json
@@ -95,9 +95,8 @@ func (h *DeviceHandler) Command(c *gin.Context) {
 // @Param action query string false "TURN_ON or TURN_OFF"
 // @Param result query string false "PENDING, SUCCESS, FAILED or TIMEOUT"
 // @Param q query string false "Time search: a leading part of yyyy/MM/dd HH:mm:ss, e.g. 2026/10/06 11"
-// @Param utcOffset query int false "Client offset east of UTC in minutes, used to read a time search (default 0)"
-// @Param from query string false "ISO-8601 start time"
-// @Param to query string false "ISO-8601 end time"
+// @Param startTime query string false "Start of the time range, e.g. 2026-10-14T00:00:00+07:00; a time without a zone is read as Vietnam time (UTC+7); empty means no lower bound"
+// @Param endTime query string false "End of the time range, same format as startTime; empty means no upper bound"
 // @Param page query int false "0-based page"
 // @Param size query int false "Page size"
 // @Success 200 {object} dto.DeviceActionHistoryPage
@@ -124,12 +123,8 @@ func (h *DeviceHandler) History(c *gin.Context) {
 		q.Result = &result
 	}
 	q.Query = c.Query("q")
-	if q.UtcOffsetMinutes, err = queryInt(c, "utcOffset"); err != nil {
-		respondError(c, h.logger, err)
-		return
-	}
-	if q.From, err = queryTime(c, "from"); err == nil {
-		q.To, err = queryTime(c, "to")
+	if q.From, err = queryTime(c, "startTime"); err == nil {
+		q.To, err = queryTime(c, "endTime")
 	}
 	if err == nil {
 		q.Page, err = queryInt(c, "page")

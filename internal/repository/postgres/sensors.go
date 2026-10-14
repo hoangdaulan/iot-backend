@@ -164,7 +164,7 @@ func (r *SensorRepository) History(
 	return readings, total, err
 }
 
-// bucketedHistory answers History with one averaged row per sensor and time window. The id is the
+// bucketedHistory answers History with one row, holding the maximum value, per sensor and time window. The id is the
 // smallest id of the window's readings and the timestamp is the window start. from is the
 // FROM/WHERE clause already built for args.
 func (r *SensorRepository) bucketedHistory(
@@ -173,7 +173,7 @@ func (r *SensorRepository) bucketedHistory(
 	args = append(args, f.Bucket.Seconds())
 	secs := fmt.Sprintf("$%d::double precision", len(args))
 	grouped := `SELECT min(d.id) AS id, s.id AS sensor_id,
-			round(avg(d.value)::numeric, 2)::double precision AS value,
+			max(d.value) AS value,
 			to_timestamp(floor(extract(epoch FROM d.timestamp)::double precision / ` + secs + `) * ` + secs + `) AS bucket,
 			s.type, s.unit` + from + ` GROUP BY s.id, s.type, s.unit, bucket`
 

@@ -62,7 +62,7 @@ type HistoryQuery struct {
 	Type     *model.SensorType
 	From, To *time.Time
 	Value    *float64
-	// Bucket, when set, averages each sensor's readings over windows of this length (a whole
+	// Bucket, when set, takes the maximum of each sensor's readings over windows of this length (a whole
 	// number of minutes, 1 minute to 24 hours).
 	Bucket time.Duration
 	// Filter selects what Query searches: FilterAll, FilterSensor (sensor id or name), a sensor

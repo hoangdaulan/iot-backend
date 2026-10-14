@@ -219,7 +219,7 @@ func TestPostgresAPI(t *testing.T) {
 			t.Errorf("window start = %v, want %v", got, window)
 		}
 
-		// A week of 10-minute readings averaged by the hour: one window per sensor and hour.
+		// A week of 10-minute readings grouped by the hour: one window per sensor and hour.
 		want := count(t, pool, `SELECT count(*) FROM (SELECT 1 FROM sensor_data d JOIN sensors s ON s.id = d.sensor_id
 			WHERE s.type = 'humidity' GROUP BY s.id, floor(extract(epoch FROM d.timestamp) / 3600)) g`)
 		get("?bucket=1h&type=humidity&size=5000")

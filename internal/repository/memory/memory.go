@@ -4,7 +4,6 @@ package memory
 
 import (
 	"context"
-	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -220,7 +219,7 @@ func (r *SensorRepository) History(
 	return page(all, f.Offset, f.Limit), int64(len(all)), nil
 }
 
-// bucketReadings averages newest-first readings per sensor over windows of d, like the SQL
+// bucketReadings takes the maximum of newest-first readings per sensor over windows of d, like the SQL
 // version: the id is the smallest of the window and the timestamp its start.
 func bucketReadings(all []model.SensorReading, d time.Duration) []model.SensorReading {
 	type key struct {
@@ -228,8 +227,6 @@ func bucketReadings(all []model.SensorReading, d time.Duration) []model.SensorRe
 		start  int64
 	}
 	groups := map[key]*model.SensorReading{}
-	counts := map[key]int{}
-	sums := map[key]float64{}
 	var order []key
 	for _, r := range all {
 		k := key{r.SensorID, r.Timestamp.Truncate(d).UnixNano()}
@@ -244,13 +241,13 @@ func bucketReadings(all []model.SensorReading, d time.Duration) []model.SensorRe
 		if r.ID < g.ID {
 			g.ID = r.ID
 		}
-		counts[k]++
-		sums[k] += r.Value
+		if r.Value > g.Value {
+			g.Value = r.Value
+		}
 	}
 	out := make([]model.SensorReading, 0, len(order))
 	for _, k := range order {
 		g := *groups[k]
-		g.Value = math.Round(sums[k]/float64(counts[k])*100) / 100
 		out = append(out, g)
 	}
 	sort.SliceStable(out, func(i, j int) bool {

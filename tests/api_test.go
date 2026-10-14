@@ -629,23 +629,23 @@ func TestSensorHistoryBucket(t *testing.T) {
 		t.Fatalf("buckets = %+v (total %d)", temps, body.TotalElements)
 	}
 	if !temps[0].Timestamp.Equal(base.Add(5*time.Minute)) || temps[0].Value != 24 ||
-		!temps[1].Timestamp.Equal(base) || temps[1].Value != 21 {
-		t.Errorf("newest first, window start, average: %+v", temps)
+		!temps[1].Timestamp.Equal(base) || temps[1].Value != 22 {
+		t.Errorf("newest first, window start, maximum: %+v", temps)
 	}
 
 	t.Run("buckets every sensor separately", func(t *testing.T) {
 		expect(t, get("?bucket=5m"), http.StatusOK, "")
-		if body.TotalElements != 4 || len(body.Data["light"]) != 2 || body.Data["light"][1].Value != 210 {
+		if body.TotalElements != 4 || len(body.Data["light"]) != 2 || body.Data["light"][1].Value != 220 {
 			t.Errorf("total %d, light %+v", body.TotalElements, body.Data["light"])
 		}
 	})
 	t.Run("a wider window merges them and pages count windows", func(t *testing.T) {
 		expect(t, get("?bucket=10m&type=temperature"), http.StatusOK, "")
-		if body.TotalElements != 1 || body.Data["temperature"][0].Value != 22 {
+		if body.TotalElements != 1 || body.Data["temperature"][0].Value != 24 {
 			t.Errorf("total %d, %+v", body.TotalElements, body.Data["temperature"])
 		}
 		expect(t, get("?bucket=5m&type=temperature&size=1&page=1"), http.StatusOK, "")
-		if len(body.Data["temperature"]) != 1 || body.Data["temperature"][0].Value != 21 {
+		if len(body.Data["temperature"]) != 1 || body.Data["temperature"][0].Value != 22 {
 			t.Errorf("page 1 = %+v", body.Data["temperature"])
 		}
 	})

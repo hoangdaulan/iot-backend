@@ -52,7 +52,7 @@ type SensorHistoryFilter struct {
 	SensorID   *int64
 	// Any, when set, keeps readings matching at least one of its conditions.
 	Any *SensorAnyOf
-	// Bucket, when positive, averages the readings of each sensor over windows of this length;
+	// Bucket, when positive, takes the maximum reading of each sensor over windows of this length;
 	// each result is then a window (its start as the timestamp) instead of a single reading.
 	Bucket        time.Duration
 	Offset, Limit int

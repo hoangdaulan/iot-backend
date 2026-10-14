@@ -112,7 +112,7 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	user, err := h.auth.UpdateProfile(c.Request.Context(), middleware.ClaimsFrom(c).UserID,
 		repository.ProfileUpdate{
 			Name: req.Name, Phone: req.Phone, Avatar: req.Avatar, Github: req.Github,
-			Figma: req.Figma, Swagger: req.Swagger,
+			Figma: req.Figma, Swagger: req.Swagger, Report: req.Report,
 		})
 	if err != nil {
 		respondError(c, h.logger, err)

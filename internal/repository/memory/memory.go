@@ -117,6 +117,7 @@ func (r *UserRepository) UpdateProfile(
 		set(&u.Github, p.Github)
 		set(&u.Figma, p.Figma)
 		set(&u.Swagger, p.Swagger)
+		set(&u.Report, p.Report)
 		u.UpdatedAt = r.s.clockFunc()
 		copied := *u
 		return &copied, nil

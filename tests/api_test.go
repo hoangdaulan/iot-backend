@@ -305,16 +305,20 @@ func TestProfile(t *testing.T) {
 	t.Run("PATCH updates swagger and the other editable fields", func(t *testing.T) {
 		res := h.do(http.MethodPatch, "/api/auth/profile", token, map[string]string{
 			"name": "New Name", "github": "https://github.com/x", "figma": "https://figma.com/@x",
-			"swagger": "https://example.com/swagger",
+			"swagger": "https://example.com/swagger", "report": "https://example.com/report.pdf",
 		})
 		expect(t, res, http.StatusOK, "")
 		updated := res.json(t)
 		if updated["name"] != "New Name" || updated["github"] != "https://github.com/x" ||
-			updated["figma"] != "https://figma.com/@x" || updated["swagger"] != "https://example.com/swagger" {
+			updated["figma"] != "https://figma.com/@x" || updated["swagger"] != "https://example.com/swagger" ||
+			updated["report"] != "https://example.com/report.pdf" {
 			t.Errorf("updated = %v", updated)
 		}
 		if got := h.do(http.MethodGet, "/api/auth/profile", token, nil).json(t)["swagger"]; got != "https://example.com/swagger" {
 			t.Errorf("profile swagger = %v", got)
+		}
+		if got := h.do(http.MethodGet, "/api/auth/profile", token, nil).json(t)["report"]; got != "https://example.com/report.pdf" {
+			t.Errorf("profile report = %v", got)
 		}
 	})
 

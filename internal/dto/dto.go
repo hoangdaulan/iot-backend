@@ -56,6 +56,7 @@ type User struct {
 	Github   *string    `json:"github,omitempty"`
 	Figma    *string    `json:"figma,omitempty"`
 	Swagger  *string    `json:"swagger,omitempty"`
+	Report   *string    `json:"report,omitempty"`
 	Role     model.Role `json:"role"`
 }
 
@@ -67,6 +68,7 @@ type UpdateProfileRequest struct {
 	Github  *string `json:"github"`
 	Figma   *string `json:"figma"`
 	Swagger *string `json:"swagger"`
+	Report  *string `json:"report"`
 }
 
 type ChangePasswordRequest struct {
@@ -171,7 +173,7 @@ func TotalPages(total int64, size int) int {
 func UserFrom(u *model.User) User {
 	return User{
 		ID: u.ID, Name: u.Name, Email: u.Email, Username: u.Username, Phone: u.Phone,
-		Avatar: u.Avatar, Github: u.Github, Figma: u.Figma, Swagger: u.Swagger, Role: u.Role,
+		Avatar: u.Avatar, Github: u.Github, Figma: u.Figma, Swagger: u.Swagger, Report: u.Report, Role: u.Role,
 	}
 }
 

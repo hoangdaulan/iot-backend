@@ -25,6 +25,7 @@ type User struct {
 	Github       *string
 	Figma        *string
 	Swagger      *string
+	Report       *string
 	Role         Role
 	CreatedAt    time.Time
 	UpdatedAt    time.Time

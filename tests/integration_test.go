@@ -332,6 +332,24 @@ func TestPostgresAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("warning LED changes are recorded by the system", func(t *testing.T) {
+		before := count(t, pool, `SELECT count(*) FROM device_actions WHERE device_id = 3 AND user_id IS NULL`)
+		now := time.Now().UTC()
+		h.ingest(now, map[model.SensorType]float64{"wind_speed": 350})
+		h.ingest(now, map[model.SensorType]float64{"wind_speed": 360}) // still on: no new row
+		h.ingest(now, map[model.SensorType]float64{"wind_speed": 20})
+		if n := count(t, pool, `SELECT count(*) FROM device_actions WHERE device_id = 3 AND user_id IS NULL`); n != before+2 {
+			t.Errorf("system actions of LED WIND = %d, want %d", n, before+2)
+		}
+		if n := count(t, pool, `SELECT count(*) FROM device_actions WHERE device_id = 3 AND user_id IS NULL
+			AND result = 'SUCCESS' AND completed_at IS NOT NULL AND message LIKE 'Wind speed%'`); n != before+2 {
+			t.Errorf("completed system actions = %d", n)
+		}
+		if n := count(t, pool, `SELECT count(*) FROM devices WHERE id = 3 AND status = 'OFF'`); n != 1 {
+			t.Errorf("LED WIND should be off again")
+		}
+	})
+
 }
 
 // TestMQTTEndToEnd runs the real MQTT client against a broker, with a simulated ESP32.

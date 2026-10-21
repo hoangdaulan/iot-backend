@@ -311,6 +311,20 @@ func (s *SensorService) syncWindLED(ctx context.Context, wind float64) error {
 	if err := s.devices.UpdateStatus(ctx, led.ID, want); err != nil {
 		return fmt.Errorf("update warning LED: %w", err)
 	}
+	// Every change of the warning LED is a row of the control history, made by the system (no user).
+	action := model.ActionTurnOff
+	message := fmt.Sprintf("Wind speed %.0f km/h is below %.0f km/h: warning LED off", wind, model.WindWarningThreshold)
+	if want == model.DeviceOn {
+		action = model.ActionTurnOn
+		message = fmt.Sprintf("Wind speed %.0f km/h reached %.0f km/h: warning LED on", wind, model.WindWarningThreshold)
+	}
+	record := &model.DeviceAction{DeviceID: led.ID, Action: action, Result: model.ResultSuccess, Message: &message}
+	if err := s.devices.CreateAction(ctx, record); err != nil {
+		return fmt.Errorf("record warning LED change: %w", err)
+	}
+	if err := s.devices.CompleteAction(ctx, record.ID, model.ResultSuccess, message); err != nil {
+		return fmt.Errorf("complete warning LED change: %w", err)
+	}
 	return nil
 }
 

@@ -1014,8 +1014,30 @@ func TestWindWarningLED(t *testing.T) {
 	if status() != "ON" {
 		t.Error("a refused command must not change the LED")
 	}
-	if got := h.do(http.MethodGet, "/api/devices/control-history?deviceId=3", token, nil).json(t)["totalElements"]; got != float64(0) {
-		t.Errorf("a refused command is not recorded: %v", got)
+	// Only the three real changes (OFF->ON, ON->OFF, OFF->ON) are in the control history, made by
+	// the system (no user); the refused command and the unchanged readings are not.
+	var history struct {
+		TotalElements int
+		Content       []struct {
+			DeviceName string
+			Action     string
+			Result     string
+			Message    string
+			User       *struct{ ID int }
+		}
+	}
+	_ = json.Unmarshal(h.do(http.MethodGet, "/api/devices/control-history?deviceId=3", token, nil).Body, &history)
+	if history.TotalElements != 3 || len(history.Content) != 3 {
+		t.Fatalf("history = %+v", history)
+	}
+	for i, want := range []string{"TURN_ON", "TURN_OFF", "TURN_ON"} {
+		got := history.Content[i]
+		if got.Action != want || got.Result != "SUCCESS" || got.DeviceName != "LED WIND" || got.User != nil || got.Message == "" {
+			t.Errorf("entry %d = %+v, want %s by the system", i, got, want)
+		}
+	}
+	if !strings.Contains(history.Content[0].Message, "400 km/h") {
+		t.Errorf("message = %q", history.Content[0].Message)
 	}
 }
 

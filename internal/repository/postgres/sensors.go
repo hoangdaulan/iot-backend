@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -48,6 +49,30 @@ func (r *SensorRepository) InsertData(ctx context.Context, data []model.SensorDa
 		return fmt.Errorf("insert sensor data: %w", err)
 	}
 	return nil
+}
+
+func (r *SensorRepository) WindWarningsByDay(
+	ctx context.Context, from, to time.Time, minValue float64,
+) (map[string]int, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT to_char(d.timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD') AS day, count(*)
+		FROM sensor_data d JOIN sensors s ON s.id = d.sensor_id
+		WHERE s.type = 'wind_speed' AND d.value >= $1 AND d.timestamp >= $2 AND d.timestamp < $3
+		GROUP BY day`, minValue, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("wind warnings by day: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var day string
+		var n int
+		if err := rows.Scan(&day, &n); err != nil {
+			return nil, err
+		}
+		out[day] = n
+	}
+	return out, rows.Err()
 }
 
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)

@@ -155,3 +155,29 @@ func parseSensorHistoryQuery(c *gin.Context) (service.HistoryQuery, error) {
 	// Validate here so the response echoes the effective page size.
 	return q, q.Validate()
 }
+
+// WindWarnings handles GET /api/reports/wind-warnings?month=yyyy-MM.
+// @Summary Wind warnings per day of a month
+// @Description Counts, for every day of the month (Vietnam time), the wind speed readings at or above the warning threshold (300 km/h), i.e. the times the warning LED was on.
+// @Tags Reports
+// @Produce json
+// @Security BearerAuth
+// @Param month query string false "Month as yyyy-MM, default the current month"
+// @Success 200 {object} dto.WindWarningReport
+// @Failure 400 {object} dto.ErrorResponse
+// @Failure 401 {object} dto.ErrorResponse
+// @Router /reports/wind-warnings [get]
+func (h *SensorHandler) WindWarnings(c *gin.Context) {
+	report, err := h.sensors.WindWarnings(c.Request.Context(), c.Query("month"))
+	if err != nil {
+		respondError(c, h.logger, err)
+		return
+	}
+	days := make([]dto.WindWarningDay, 0, len(report.Days))
+	for _, d := range report.Days {
+		days = append(days, dto.WindWarningDay{Date: d.Date, Count: d.Count})
+	}
+	c.JSON(http.StatusOK, dto.WindWarningReport{
+		Month: report.Month, Threshold: report.Threshold, Total: report.Total, Days: days,
+	})
+}

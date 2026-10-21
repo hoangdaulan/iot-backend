@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -282,7 +283,85 @@ func (s *SensorService) Ingest(ctx context.Context, values map[model.SensorType]
 	if err := s.sensors.InsertData(ctx, rows); err != nil {
 		return 0, err
 	}
+	if wind, ok := values[model.SensorWindSpeed]; ok {
+		if err := s.syncWindLED(ctx, wind); err != nil {
+			return len(rows), err
+		}
+	}
 	return len(rows), nil
+}
+
+// syncWindLED keeps the warning LED's stored state equal to what the firmware shows: on while the
+// wind speed is at least model.WindWarningThreshold. It writes only when the state changes.
+func (s *SensorService) syncWindLED(ctx context.Context, wind float64) error {
+	want := model.DeviceOff
+	if wind >= model.WindWarningThreshold {
+		want = model.DeviceOn
+	}
+	led, err := s.devices.FindByID(ctx, model.WindLEDDeviceID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load warning LED: %w", err)
+	}
+	if led.Status == want {
+		return nil
+	}
+	if err := s.devices.UpdateStatus(ctx, led.ID, want); err != nil {
+		return fmt.Errorf("update warning LED: %w", err)
+	}
+	return nil
+}
+
+// WindWarningDay is the number of warnings (wind speed readings at or above the threshold) of
+// one Vietnam-time day.
+type WindWarningDay struct {
+	Date  string // yyyy-MM-dd
+	Count int
+}
+
+// WindWarningReport lists every day of a month with its warning count.
+type WindWarningReport struct {
+	Month     string // yyyy-MM
+	Threshold float64
+	Total     int
+	Days      []WindWarningDay
+}
+
+// WindWarnings counts the warnings of each day of month (yyyy-MM, Vietnam time; empty means the
+// current month). Days after today and days without warnings count 0.
+func (s *SensorService) WindWarnings(ctx context.Context, month string) (*WindWarningReport, error) {
+	start, err := parseMonth(month)
+	if err != nil {
+		return nil, err
+	}
+	end := start.AddDate(0, 1, 0)
+	counts, err := s.sensors.WindWarningsByDay(ctx, start, end, model.WindWarningThreshold)
+	if err != nil {
+		return nil, err
+	}
+	report := &WindWarningReport{Month: start.Format("2006-01"), Threshold: model.WindWarningThreshold}
+	for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
+		date := day.Format("2006-01-02")
+		report.Days = append(report.Days, WindWarningDay{Date: date, Count: counts[date]})
+		report.Total += counts[date]
+	}
+	return report, nil
+}
+
+// parseMonth reads yyyy-MM as the first moment of that month in Vietnam time; empty is the
+// current month.
+func parseMonth(month string) (time.Time, error) {
+	if month == "" {
+		now := time.Now().In(vntime.Loc)
+		return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, vntime.Loc), nil
+	}
+	t, err := time.ParseInLocation("2006-01", month, vntime.Loc)
+	if err != nil {
+		return time.Time{}, apperr.BadRequest("Invalid query parameters: month must be yyyy-MM")
+	}
+	return t, nil
 }
 
 func (s *SensorService) sensorsByType(ctx context.Context) (map[model.SensorType]model.Sensor, error) {

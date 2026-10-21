@@ -297,6 +297,41 @@ func TestPostgresAPI(t *testing.T) {
 			t.Errorf("recent actions = %d", page.TotalElements)
 		}
 	})
+
+	t.Run("wind warnings per day agree with plain SQL", func(t *testing.T) {
+		var report struct {
+			Total int
+			Days  []struct {
+				Date  string
+				Count int
+			}
+		}
+		res := h.do(http.MethodGet, "/api/reports/wind-warnings", token, nil)
+		expect(t, res, http.StatusOK, "")
+		_ = json.Unmarshal(res.Body, &report)
+		monthStart := time.Now().In(vntime.Loc)
+		monthStart = time.Date(monthStart.Year(), monthStart.Month(), 1, 0, 0, 0, 0, vntime.Loc)
+		want := count(t, pool, `SELECT count(*) FROM sensor_data d JOIN sensors s ON s.id = d.sensor_id
+			WHERE s.type = 'wind_speed' AND d.value >= 300 AND d.timestamp >= $1 AND d.timestamp < $2`,
+			monthStart, monthStart.AddDate(0, 1, 0))
+		if int64(report.Total) != want {
+			t.Errorf("total = %d, want %d", report.Total, want)
+		}
+		sum := 0
+		for _, d := range report.Days {
+			sum += d.Count
+			day, _ := time.ParseInLocation("2006-01-02", d.Date, vntime.Loc)
+			if n := count(t, pool, `SELECT count(*) FROM sensor_data d JOIN sensors s ON s.id = d.sensor_id
+				WHERE s.type = 'wind_speed' AND d.value >= 300 AND d.timestamp >= $1 AND d.timestamp < $2`,
+				day, day.AddDate(0, 0, 1)); int64(d.Count) != n {
+				t.Errorf("%s: %d, want %d", d.Date, d.Count, n)
+			}
+		}
+		if sum != report.Total {
+			t.Errorf("days add up to %d, total %d", sum, report.Total)
+		}
+	})
+
 }
 
 // TestMQTTEndToEnd runs the real MQTT client against a broker, with a simulated ESP32.

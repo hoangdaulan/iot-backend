@@ -962,3 +962,115 @@ func TestWindSpeedSensor(t *testing.T) {
 			"Invalid query parameters: type must be temperature, humidity, light or wind_speed")
 	})
 }
+
+func TestWindWarningLED(t *testing.T) {
+	h := newHarness(t)
+	token := h.login("admin")
+	now := time.Now().UTC()
+	status := func() string {
+		var devices []struct {
+			ID     int
+			Status string
+		}
+		_ = json.Unmarshal(h.do(http.MethodGet, "/api/devices", token, nil).Body, &devices)
+		for _, d := range devices {
+			if d.ID == 3 {
+				return d.Status
+			}
+		}
+		return ""
+	}
+	if status() != "OFF" {
+		t.Fatalf("LED WIND starts off, got %s", status())
+	}
+	for _, c := range []struct {
+		wind float64
+		want string
+	}{{299, "OFF"}, {300, "ON"}, {500, "ON"}, {120, "OFF"}} {
+		h.ingest(now, map[model.SensorType]float64{"wind_speed": c.wind})
+		if got := status(); got != c.want {
+			t.Errorf("wind %v: LED WIND = %s, want %s", c.wind, got, c.want)
+		}
+	}
+	// A reading without wind speed leaves the LED alone.
+	h.ingest(now, map[model.SensorType]float64{"wind_speed": 400})
+	h.ingest(now, map[model.SensorType]float64{"temperature": 20})
+	if status() != "ON" {
+		t.Error("a reading without wind speed must not change LED WIND")
+	}
+	// latest reports it, and it cannot be switched by hand.
+	var latest struct {
+		Devices []struct {
+			ID     int
+			Status string
+		}
+	}
+	_ = json.Unmarshal(h.do(http.MethodGet, "/api/sensor-data/latest", token, nil).Body, &latest)
+	if len(latest.Devices) != 3 || latest.Devices[2].Status != "ON" {
+		t.Errorf("latest devices = %+v", latest.Devices)
+	}
+	expect(t, h.do(http.MethodPost, "/api/devices/3/command", token, `{"command":"OFF"}`), http.StatusBadRequest,
+		"LED WIND is automatic: it follows the wind speed")
+	if status() != "ON" {
+		t.Error("a refused command must not change the LED")
+	}
+	if got := h.do(http.MethodGet, "/api/devices/control-history?deviceId=3", token, nil).json(t)["totalElements"]; got != float64(0) {
+		t.Errorf("a refused command is not recorded: %v", got)
+	}
+}
+
+func TestWindWarningReport(t *testing.T) {
+	h := newHarness(t)
+	token := h.login("admin")
+	day := func(d, hh int) time.Time { return time.Date(2026, 10, d, hh, 0, 0, 0, vntime.Loc).UTC() }
+	for _, r := range []struct {
+		at   time.Time
+		wind float64
+	}{
+		{day(1, 8), 350}, {day(1, 9), 300}, {day(1, 10), 299}, // 2 warnings on the 1st
+		{day(3, 23), 500}, // late on the 3rd, Vietnam time
+		{day(4, 0), 450},  // just after midnight: the 4th
+		{day(31, 12), 310},
+		{time.Date(2026, 9, 30, 12, 0, 0, 0, vntime.Loc).UTC(), 400}, // another month
+	} {
+		h.ingest(r.at, map[model.SensorType]float64{"wind_speed": r.wind})
+	}
+	var report struct {
+		Month     string
+		Threshold float64
+		Total     int
+		Days      []struct {
+			Date  string
+			Count int
+		}
+	}
+	res := h.do(http.MethodGet, "/api/reports/wind-warnings?month=2026-10", token, nil)
+	expect(t, res, http.StatusOK, "")
+	_ = json.Unmarshal(res.Body, &report)
+	if report.Month != "2026-10" || report.Threshold != 300 || report.Total != 5 || len(report.Days) != 31 {
+		t.Fatalf("report = %s", res.Body)
+	}
+	counts := map[string]int{}
+	for _, d := range report.Days {
+		counts[d.Date] = d.Count
+	}
+	if counts["2026-10-01"] != 2 || counts["2026-10-02"] != 0 || counts["2026-10-03"] != 1 ||
+		counts["2026-10-04"] != 1 || counts["2026-10-31"] != 1 {
+		t.Errorf("counts = %v", counts)
+	}
+	if report.Days[0].Date != "2026-10-01" || report.Days[30].Date != "2026-10-31" {
+		t.Errorf("days are not in order: %v", report.Days)
+	}
+	t.Run("defaults to the current month", func(t *testing.T) {
+		var r struct{ Month string }
+		_ = json.Unmarshal(h.do(http.MethodGet, "/api/reports/wind-warnings", token, nil).Body, &r)
+		if want := time.Now().In(vntime.Loc).Format("2006-01"); r.Month != want {
+			t.Errorf("month = %s, want %s", r.Month, want)
+		}
+	})
+	t.Run("rejects a bad month and needs a token", func(t *testing.T) {
+		expect(t, h.do(http.MethodGet, "/api/reports/wind-warnings?month=2026-13", token, nil), http.StatusBadRequest,
+			"Invalid query parameters: month must be yyyy-MM")
+		expect(t, h.do(http.MethodGet, "/api/reports/wind-warnings", "", nil), http.StatusUnauthorized, "")
+	})
+}

@@ -77,11 +77,15 @@ func (s *DeviceService) SendCommand(
 	if !command.Valid() {
 		return nil, apperr.BadRequest("Invalid command")
 	}
-	if _, err := s.devices.FindByID(ctx, deviceID); err != nil {
+	device, err := s.devices.FindByID(ctx, deviceID)
+	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, apperr.NotFound("Device not found")
 		}
 		return nil, err
+	}
+	if device.Type == model.DeviceTypeWarningLed {
+		return nil, apperr.BadRequest("LED WIND is automatic: it follows the wind speed")
 	}
 
 	s.commandMu.Lock()

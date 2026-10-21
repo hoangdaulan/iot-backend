@@ -63,6 +63,17 @@ func (t SensorType) Valid() bool {
 	return t == SensorTemperature || t == SensorHumidity || t == SensorLight || t == SensorWindSpeed
 }
 
+// WindWarningThreshold is the wind speed (km/h) from which the warning LED lights up and a
+// reading counts as a warning.
+const WindWarningThreshold = 300.0
+
+// WindLEDDeviceID is the warning LED ("LED WIND"): it follows the wind speed and is never
+// switched by a user. DeviceTypeWarningLed is its device type.
+const (
+	WindLEDDeviceID      int64 = 3
+	DeviceTypeWarningLed       = "Warning Led"
+)
+
 type Sensor struct {
 	ID        int64
 	Name      string

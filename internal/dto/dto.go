@@ -149,6 +149,20 @@ type DeviceActionHistoryItem struct {
 	Message    *string             `json:"message,omitempty"`
 }
 
+// WindWarningDay is the number of wind warnings of one day.
+type WindWarningDay struct {
+	Date  string `json:"date"`
+	Count int    `json:"count"`
+}
+
+// WindWarningReport lists every day of a month with its number of wind warnings.
+type WindWarningReport struct {
+	Month     string           `json:"month"`
+	Threshold float64          `json:"threshold"`
+	Total     int              `json:"total"`
+	Days      []WindWarningDay `json:"days"`
+}
+
 type PageResponse[T any] struct {
 	Content       []T   `json:"content"`
 	Page          int   `json:"page"`

@@ -11,6 +11,7 @@ import (
 
 	"iot-backend/internal/model"
 	"iot-backend/internal/repository"
+	"iot-backend/internal/vntime"
 )
 
 // Store holds all data; its repositories share one lock.
@@ -156,6 +157,21 @@ func (r *SensorRepository) InsertData(_ context.Context, rows []model.SensorData
 		r.s.data = append(r.s.data, row)
 	}
 	return nil
+}
+
+func (r *SensorRepository) WindWarningsByDay(
+	_ context.Context, from, to time.Time, minValue float64,
+) (map[string]int, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	out := map[string]int{}
+	for _, d := range r.s.data {
+		rd := r.reading(d)
+		if rd.Type == model.SensorWindSpeed && d.Value >= minValue && !d.Timestamp.Before(from) && d.Timestamp.Before(to) {
+			out[d.Timestamp.In(vntime.Loc).Format("2006-01-02")]++
+		}
+	}
+	return out, nil
 }
 
 func (r *SensorRepository) reading(d model.SensorData) model.SensorReading {

@@ -38,6 +38,9 @@ type SensorRepository interface {
 	Latest(ctx context.Context) ([]model.SensorReading, error)
 	// History returns one page of readings, newest first, and the total number of matches.
 	History(ctx context.Context, f SensorHistoryFilter) ([]model.SensorReading, int64, error)
+	// WindWarningsByDay counts, per Vietnam-time day (yyyy-MM-dd), the wind speed readings from
+	// minValue up taken in [from, to). Days without a reading are absent.
+	WindWarningsByDay(ctx context.Context, from, to time.Time, minValue float64) (map[string]int, error)
 }
 
 type SensorHistoryFilter struct {

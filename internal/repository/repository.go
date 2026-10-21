@@ -31,6 +31,13 @@ type ProfileUpdate struct {
 	Name, Phone, Avatar, Github, Figma, Swagger, Report *string
 }
 
+// SettingsRepository stores runtime settings as key/value text.
+type SettingsRepository interface {
+	// Get returns ErrNotFound when the key has no value.
+	Get(ctx context.Context, key string) (string, error)
+	Set(ctx context.Context, key, value string) error
+}
+
 type SensorRepository interface {
 	List(ctx context.Context) ([]model.Sensor, error)
 	InsertData(ctx context.Context, rows []model.SensorData) error

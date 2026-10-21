@@ -79,7 +79,8 @@ func postgresHarness(t *testing.T, pool *pgxpool.Pool, publisher service.Publish
 	gin.SetMode(gin.TestMode)
 	tokens := service.NewTokenService("test-secret", time.Hour)
 	deviceRepo := postgres.NewDeviceRepository(pool)
-	sensors := service.NewSensorService(postgres.NewSensorRepository(pool), deviceRepo)
+	sensors := service.NewSensorService(postgres.NewSensorRepository(pool), deviceRepo).
+		WithSettings(postgres.NewSettingsRepository(pool), nil)
 	devices := service.NewDeviceService(deviceRepo, publisher, timeout, quietLogger)
 	return &harness{
 		t: t, sensors: sensors,
@@ -332,6 +333,18 @@ func TestPostgresAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("the wind threshold is stored in the settings table", func(t *testing.T) {
+		if got := h.do(http.MethodGet, "/api/settings/wind-threshold", token, nil).json(t)["threshold"]; got != float64(300) {
+			t.Errorf("default threshold = %v", got)
+		}
+		expect(t, h.do(http.MethodPut, "/api/settings/wind-threshold", token, `{"threshold":275}`), http.StatusOK, "")
+		if n := count(t, pool, `SELECT count(*) FROM settings WHERE key = 'wind_warning_threshold' AND value = '275'`); n != 1 {
+			t.Errorf("settings rows = %d", n)
+		}
+		// restore, so later checks use the default
+		expect(t, h.do(http.MethodPut, "/api/settings/wind-threshold", token, `{"threshold":300}`), http.StatusOK, "")
+	})
+
 	t.Run("warning LED changes are recorded by the system", func(t *testing.T) {
 		before := count(t, pool, `SELECT count(*) FROM device_actions WHERE device_id = 3 AND user_id IS NULL`)
 		now := time.Now().UTC()
@@ -370,6 +383,7 @@ func TestMQTTEndToEnd(t *testing.T) {
 		SensorTopic:   "test/" + suffix + "/sensor-data",
 		ControlTopic:  "test/" + suffix + "/device-control",
 		ResponseTopic: "test/" + suffix + "/device-response",
+		ConfigTopic:   "test/" + suffix + "/config",
 	}
 
 	deviceRepo := postgres.NewDeviceRepository(pool)
@@ -384,6 +398,7 @@ func TestMQTTEndToEnd(t *testing.T) {
 		DeviceResponse: func(r service.DeviceResponse) { devices.HandleResponse(r) },
 	}, quietLogger)
 	devices = service.NewDeviceService(deviceRepo, client, 3*time.Second, quietLogger)
+	sensors.WithSettings(postgres.NewSettingsRepository(pool), client)
 	client.Connect(5 * time.Second)
 	t.Cleanup(client.Close)
 
@@ -407,6 +422,30 @@ func TestMQTTEndToEnd(t *testing.T) {
 		t.Fatalf("esp subscribe: %v", tok.Error())
 	}
 	waitFor(t, "backend subscriptions", client.Ready)
+
+	// A new wind threshold is stored and sent retained, so an ESP32 that subscribes later gets it.
+	if err := sensors.SetWindThreshold(context.Background(), 275); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM settings WHERE key = 'wind_warning_threshold' AND value = '275'`); n != 1 {
+		t.Errorf("stored threshold rows = %d", n)
+	}
+	got := make(chan string, 1)
+	late := paho.NewClient(paho.NewClientOptions().AddBroker(fmt.Sprintf("tcp://%s", broker)).
+		SetClientID("myiot-test-late-esp32-" + suffix))
+	if tok := late.Connect(); !tok.WaitTimeout(5*time.Second) || tok.Error() != nil {
+		t.Fatalf("late esp connect: %v", tok.Error())
+	}
+	t.Cleanup(func() { late.Disconnect(100) })
+	late.Subscribe(cfg.ConfigTopic, 1, func(_ paho.Client, m paho.Message) { got <- string(m.Payload()) })
+	select {
+	case payload := <-got:
+		if payload != `{"windThreshold":275}` {
+			t.Errorf("retained config = %s", payload)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("no retained config received")
+	}
 
 	before := count(t, pool, `SELECT count(*) FROM sensor_data`)
 	lastID := count(t, pool, `SELECT max(id) FROM sensor_data`)

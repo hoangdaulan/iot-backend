@@ -22,6 +22,7 @@ type Store struct {
 	sensors   []model.Sensor
 	data      []model.SensorData
 	actions   []model.DeviceAction
+	settings  map[string]string
 	nextIDs   map[string]int64
 	clockFunc func() time.Time
 }
@@ -42,6 +43,7 @@ func NewStore() *Store {
 			{ID: 3, Name: "Light", Type: model.SensorLight, Unit: "lux", CreatedAt: now, UpdatedAt: now},
 			{ID: 4, Name: "Wind Speed", Type: model.SensorWindSpeed, Unit: "km/h", CreatedAt: now, UpdatedAt: now},
 		},
+		settings:  map[string]string{"wind_warning_threshold": "300"},
 		nextIDs:   map[string]int64{},
 		clockFunc: func() time.Time { return time.Now().UTC() },
 	}
@@ -52,9 +54,10 @@ func (s *Store) nextID(table string) int64 {
 	return s.nextIDs[table]
 }
 
-func (s *Store) Users() *UserRepository     { return &UserRepository{s} }
-func (s *Store) Sensors() *SensorRepository { return &SensorRepository{s} }
-func (s *Store) Devices() *DeviceRepository { return &DeviceRepository{s} }
+func (s *Store) Users() *UserRepository        { return &UserRepository{s} }
+func (s *Store) Sensors() *SensorRepository    { return &SensorRepository{s} }
+func (s *Store) Devices() *DeviceRepository    { return &DeviceRepository{s} }
+func (s *Store) Settings() *SettingsRepository { return &SettingsRepository{s} }
 
 // ── Users ──
 
@@ -409,4 +412,25 @@ func page[T any](all []T, offset, limit int) []T {
 	}
 	end := min(offset+limit, len(all))
 	return all[offset:end]
+}
+
+// ── Settings ──
+
+type SettingsRepository struct{ s *Store }
+
+func (r *SettingsRepository) Get(_ context.Context, key string) (string, error) {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	v, ok := r.s.settings[key]
+	if !ok {
+		return "", repository.ErrNotFound
+	}
+	return v, nil
+}
+
+func (r *SettingsRepository) Set(_ context.Context, key, value string) error {
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	r.s.settings[key] = value
+	return nil
 }

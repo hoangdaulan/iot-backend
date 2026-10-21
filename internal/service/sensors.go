@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -22,16 +23,95 @@ const (
 	MaxPageSize     = 5000
 )
 
+// ConfigPublisher sends the device configuration (the wind warning threshold) to the ESP32.
+type ConfigPublisher interface {
+	PublishConfig(ctx context.Context, payload []byte) error
+}
+
+// Setting keys and limits of the wind warning threshold.
+const (
+	windThresholdKey = "wind_warning_threshold"
+	MinWindThreshold = 0
+	MaxWindThreshold = 500
+)
+
 type SensorService struct {
 	sensors repository.SensorRepository
 	devices repository.DeviceRepository
 
+	settings repository.SettingsRepository
+	config   ConfigPublisher
+
 	mu          sync.Mutex
 	sensorByTyp map[model.SensorType]model.Sensor
+	threshold   *float64 // cached wind warning threshold
 }
 
 func NewSensorService(sensors repository.SensorRepository, devices repository.DeviceRepository) *SensorService {
 	return &SensorService{sensors: sensors, devices: devices}
+}
+
+// WithSettings lets the wind warning threshold be stored and changed at run time and sent to the
+// ESP32 through config. Without it the threshold is model.WindWarningThreshold.
+func (s *SensorService) WithSettings(settings repository.SettingsRepository, config ConfigPublisher) *SensorService {
+	s.settings, s.config = settings, config
+	return s
+}
+
+// WindThreshold is the wind speed (km/h) from which the warning LED is on and a reading counts as
+// a warning.
+func (s *SensorService) WindThreshold(ctx context.Context) (float64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.threshold != nil {
+		return *s.threshold, nil
+	}
+	value := model.WindWarningThreshold
+	if s.settings != nil {
+		raw, err := s.settings.Get(ctx, windThresholdKey)
+		switch {
+		case errors.Is(err, repository.ErrNotFound):
+		case err != nil:
+			return 0, fmt.Errorf("load wind threshold: %w", err)
+		default:
+			if v, perr := strconv.ParseFloat(raw, 64); perr == nil {
+				value = v
+			}
+		}
+	}
+	s.threshold = &value
+	return value, nil
+}
+
+// SetWindThreshold stores a new threshold (a whole number from 0 to 500) and sends it to the
+// ESP32. The value is kept even if the broker is down: it is sent again on every reconnection.
+func (s *SensorService) SetWindThreshold(ctx context.Context, value float64) error {
+	if value != math.Trunc(value) || value < MinWindThreshold || value > MaxWindThreshold {
+		return apperr.BadRequest(fmt.Sprintf("Invalid threshold: must be a whole number from %d to %d", MinWindThreshold, MaxWindThreshold))
+	}
+	if s.settings != nil {
+		if err := s.settings.Set(ctx, windThresholdKey, strconv.FormatFloat(value, 'f', -1, 64)); err != nil {
+			return err
+		}
+	}
+	s.mu.Lock()
+	s.threshold = &value
+	s.mu.Unlock()
+	_ = s.PublishWindThreshold(ctx)
+	return nil
+}
+
+// PublishWindThreshold sends the current threshold to the ESP32 (retained).
+func (s *SensorService) PublishWindThreshold(ctx context.Context) error {
+	if s.config == nil {
+		return nil
+	}
+	threshold, err := s.WindThreshold(ctx)
+	if err != nil {
+		return err
+	}
+	payload, _ := json.Marshal(map[string]int{"windThreshold": int(threshold)})
+	return s.config.PublishConfig(ctx, payload)
 }
 
 func (s *SensorService) Sensors(ctx context.Context) ([]model.Sensor, error) {
@@ -294,8 +374,12 @@ func (s *SensorService) Ingest(ctx context.Context, values map[model.SensorType]
 // syncWindLED keeps the warning LED's stored state equal to what the firmware shows: on while the
 // wind speed is at least model.WindWarningThreshold. It writes only when the state changes.
 func (s *SensorService) syncWindLED(ctx context.Context, wind float64) error {
+	threshold, err := s.WindThreshold(ctx)
+	if err != nil {
+		return err
+	}
 	want := model.DeviceOff
-	if wind >= model.WindWarningThreshold {
+	if wind >= threshold {
 		want = model.DeviceOn
 	}
 	led, err := s.devices.FindByID(ctx, model.WindLEDDeviceID)
@@ -313,10 +397,10 @@ func (s *SensorService) syncWindLED(ctx context.Context, wind float64) error {
 	}
 	// Every change of the warning LED is a row of the control history, made by the system (no user).
 	action := model.ActionTurnOff
-	message := fmt.Sprintf("Wind speed %.0f km/h is below %.0f km/h: warning LED off", wind, model.WindWarningThreshold)
+	message := fmt.Sprintf("Wind speed %.0f km/h is below %.0f km/h: warning LED off", wind, threshold)
 	if want == model.DeviceOn {
 		action = model.ActionTurnOn
-		message = fmt.Sprintf("Wind speed %.0f km/h reached %.0f km/h: warning LED on", wind, model.WindWarningThreshold)
+		message = fmt.Sprintf("Wind speed %.0f km/h reached %.0f km/h: warning LED on", wind, threshold)
 	}
 	record := &model.DeviceAction{DeviceID: led.ID, Action: action, Result: model.ResultSuccess, Message: &message}
 	if err := s.devices.CreateAction(ctx, record); err != nil {
@@ -351,11 +435,15 @@ func (s *SensorService) WindWarnings(ctx context.Context, month string) (*WindWa
 		return nil, err
 	}
 	end := start.AddDate(0, 1, 0)
-	counts, err := s.sensors.WindWarningsByDay(ctx, start, end, model.WindWarningThreshold)
+	threshold, err := s.WindThreshold(ctx)
 	if err != nil {
 		return nil, err
 	}
-	report := &WindWarningReport{Month: start.Format("2006-01"), Threshold: model.WindWarningThreshold}
+	counts, err := s.sensors.WindWarningsByDay(ctx, start, end, threshold)
+	if err != nil {
+		return nil, err
+	}
+	report := &WindWarningReport{Month: start.Format("2006-01"), Threshold: threshold}
 	for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
 		date := day.Format("2006-01-02")
 		report.Days = append(report.Days, WindWarningDay{Date: date, Count: counts[date]})

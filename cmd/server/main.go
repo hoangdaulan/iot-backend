@@ -69,6 +69,7 @@ func run(logger *slog.Logger) error {
 
 	tokens := service.NewTokenService(cfg.JWTSecret, cfg.JWTTTL)
 	auth := service.NewAuthService(users, tokens).WithUploadDir(cfg.UploadDir)
+	settingsRepo := postgres.NewSettingsRepository(pool)
 	sensors := service.NewSensorService(sensorRepo, deviceRepo)
 
 	// The MQTT client needs the device service for responses and vice versa, so the client is
@@ -80,9 +81,19 @@ func run(logger *slog.Logger) error {
 		mqttClient = mqtt.New(cfg.MQTT, mqtt.Handlers{
 			SensorData:     func(p mqtt.SensorPayload) { ingest(sensors, p, logger) },
 			DeviceResponse: func(r service.DeviceResponse) { devices.HandleResponse(r) },
+			// The broker may have restarted: send the threshold to the ESP32 again.
+			Connected: func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if err := sensors.PublishWindThreshold(ctx); err != nil {
+					logger.Warn("publish wind threshold", "error", err)
+				}
+			},
 		}, logger)
 		publisher = mqttClient
+		sensors.WithSettings(settingsRepo, mqttClient)
 	} else {
+		sensors.WithSettings(settingsRepo, mqtt.Disabled{})
 		logger.Warn("MQTT disabled: device commands will fail and no sensor data is ingested")
 	}
 	devices = service.NewDeviceService(deviceRepo, publisher, cfg.MQTT.CommandTimeout, logger)

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -28,6 +29,29 @@ import (
 	"iot-backend/internal/service"
 	"iot-backend/internal/vntime"
 )
+
+// fakeConfig records the configuration sent to the ESP32.
+type fakeConfig struct {
+	mu       sync.Mutex
+	payloads []string
+	fail     bool
+}
+
+func (f *fakeConfig) PublishConfig(_ context.Context, payload []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.fail {
+		return errors.New("mqtt broker not connected")
+	}
+	f.payloads = append(f.payloads, string(payload))
+	return nil
+}
+
+func (f *fakeConfig) sent() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.payloads...)
+}
 
 // fakeESP32 answers published commands the way the test configures.
 type fakeESP32 struct {
@@ -65,6 +89,7 @@ func (f *fakeESP32) stayQuiet() {
 }
 
 type harness struct {
+	config  *fakeConfig
 	t       *testing.T
 	handler http.Handler
 	store   *memory.Store
@@ -81,7 +106,8 @@ func newHarness(t *testing.T) *harness {
 	tokens := service.NewTokenService("test-secret", time.Hour)
 	uploads := t.TempDir()
 	auth := service.NewAuthService(store.Users(), tokens).WithBcryptCost(bcrypt.MinCost).WithUploadDir(uploads)
-	sensors := service.NewSensorService(store.Sensors(), store.Devices())
+	config := &fakeConfig{}
+	sensors := service.NewSensorService(store.Sensors(), store.Devices()).WithSettings(store.Settings(), config)
 	esp := &fakeESP32{}
 	esp.answer(model.ResultSuccess, "")
 	devices := service.NewDeviceService(store.Devices(), esp, 100*time.Millisecond, logger)
@@ -104,7 +130,7 @@ func newHarness(t *testing.T) *harness {
 	}
 
 	return &harness{
-		t: t, store: store, sensors: sensors, esp: esp, uploads: uploads,
+		t: t, store: store, sensors: sensors, esp: esp, config: config, uploads: uploads,
 		handler: router.New(router.Deps{
 			Auth: auth, Tokens: tokens, Sensors: sensors, Devices: devices,
 			CORSAllowedOrigins: []string{"*"}, UploadDir: uploads, Logger: logger,
@@ -1094,5 +1120,83 @@ func TestWindWarningReport(t *testing.T) {
 		expect(t, h.do(http.MethodGet, "/api/reports/wind-warnings?month=2026-13", token, nil), http.StatusBadRequest,
 			"Invalid query parameters: month must be yyyy-MM")
 		expect(t, h.do(http.MethodGet, "/api/reports/wind-warnings", "", nil), http.StatusUnauthorized, "")
+	})
+}
+
+func TestWindThreshold(t *testing.T) {
+	h := newHarness(t)
+	token := h.login("admin")
+	threshold := func() float64 {
+		res := h.do(http.MethodGet, "/api/settings/wind-threshold", token, nil)
+		expect(t, res, http.StatusOK, "")
+		return res.json(t)["threshold"].(float64)
+	}
+	ledStatus := func() string {
+		var devices []struct {
+			ID     int
+			Status string
+		}
+		_ = json.Unmarshal(h.do(http.MethodGet, "/api/devices", token, nil).Body, &devices)
+		return devices[2].Status
+	}
+	if threshold() != 300 {
+		t.Fatalf("the default threshold is 300, got %v", threshold())
+	}
+
+	t.Run("a new threshold is saved and sent to the ESP32", func(t *testing.T) {
+		res := h.do(http.MethodPut, "/api/settings/wind-threshold", token, `{"threshold":250}`)
+		expect(t, res, http.StatusOK, "")
+		if threshold() != 250 {
+			t.Errorf("threshold = %v", threshold())
+		}
+		if got := h.config.sent(); len(got) != 1 || got[0] != `{"windThreshold":250}` {
+			t.Errorf("sent config = %v", got)
+		}
+	})
+	t.Run("the warning LED and the report follow it", func(t *testing.T) {
+		now := time.Now().UTC()
+		h.ingest(now, map[model.SensorType]float64{"wind_speed": 260})
+		if ledStatus() != "ON" {
+			t.Error("260 km/h is above the threshold of 250")
+		}
+		h.ingest(now, map[model.SensorType]float64{"wind_speed": 240})
+		if ledStatus() != "OFF" {
+			t.Error("240 km/h is below the threshold of 250")
+		}
+		report := h.do(http.MethodGet, "/api/reports/wind-warnings", token, nil).json(t)
+		if report["threshold"] != float64(250) || report["total"] != float64(1) {
+			t.Errorf("report = %v", report)
+		}
+	})
+	t.Run("bad values are refused and change nothing", func(t *testing.T) {
+		for _, body := range []string{`{"threshold":250.5}`, `{"threshold":-1}`, `{"threshold":501}`, `{"threshold":"high"}`, `{}`, `nope`} {
+			res := h.do(http.MethodPut, "/api/settings/wind-threshold", token, body)
+			if res.Code != http.StatusBadRequest {
+				t.Errorf("%s: status = %d, want 400 (%s)", body, res.Code, res.Body)
+			}
+		}
+		expect(t, h.do(http.MethodPut, "/api/settings/wind-threshold", token, `{"threshold":501}`), http.StatusBadRequest,
+			"Invalid threshold: must be a whole number from 0 to 500")
+		if threshold() != 250 || len(h.config.sent()) != 1 {
+			t.Errorf("threshold = %v, sent = %v", threshold(), h.config.sent())
+		}
+	})
+	t.Run("the limits are accepted", func(t *testing.T) {
+		for _, v := range []string{"0", "500"} {
+			expect(t, h.do(http.MethodPut, "/api/settings/wind-threshold", token, `{"threshold":`+v+`}`), http.StatusOK, "")
+		}
+	})
+	t.Run("it is saved even when the broker is down", func(t *testing.T) {
+		h.config.mu.Lock()
+		h.config.fail = true
+		h.config.mu.Unlock()
+		expect(t, h.do(http.MethodPut, "/api/settings/wind-threshold", token, `{"threshold":120}`), http.StatusOK, "")
+		if threshold() != 120 {
+			t.Errorf("threshold = %v", threshold())
+		}
+	})
+	t.Run("a token is required", func(t *testing.T) {
+		expect(t, h.do(http.MethodGet, "/api/settings/wind-threshold", "", nil), http.StatusUnauthorized, "")
+		expect(t, h.do(http.MethodPut, "/api/settings/wind-threshold", "", `{"threshold":100}`), http.StatusUnauthorized, "")
 	})
 }

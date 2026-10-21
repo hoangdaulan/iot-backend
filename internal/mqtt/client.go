@@ -20,6 +20,8 @@ import (
 type Handlers struct {
 	SensorData     func(SensorPayload)
 	DeviceResponse func(service.DeviceResponse)
+	// Connected, when set, runs after every (re)connection, in its own goroutine.
+	Connected func()
 }
 
 type Client struct {
@@ -74,6 +76,9 @@ func (c *Client) Connect(wait time.Duration) {
 func (c *Client) onConnect(client paho.Client) {
 	c.logger.Info("mqtt connected", "broker", c.cfg.Broker, "port", c.cfg.Port)
 	c.subscribed.Store(0)
+	if c.handlers.Connected != nil {
+		go c.handlers.Connected()
+	}
 	subscriptions := map[string]paho.MessageHandler{
 		c.cfg.SensorTopic:   c.onSensorData,
 		c.cfg.ResponseTopic: c.onDeviceResponse,
@@ -133,6 +138,23 @@ func (c *Client) PublishControl(ctx context.Context, payload []byte) error {
 	}
 }
 
+// PublishConfig publishes the device configuration on the config topic, retained so that the
+// ESP32 receives it whenever it (re)subscribes.
+func (c *Client) PublishConfig(ctx context.Context, payload []byte) error {
+	if !c.client.IsConnectionOpen() {
+		return errors.New("mqtt broker not connected")
+	}
+	token := c.client.Publish(c.cfg.ConfigTopic, c.cfg.QoS, true, payload)
+	select {
+	case <-token.Done():
+		return token.Error()
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(publishTimeout):
+		return errors.New("mqtt publish timed out")
+	}
+}
+
 // Close disconnects, letting in-flight work finish for up to 250 ms.
 func (c *Client) Close() {
 	c.client.Disconnect(250)
@@ -142,5 +164,9 @@ func (c *Client) Close() {
 type Disabled struct{}
 
 func (Disabled) PublishControl(context.Context, []byte) error {
+	return errors.New("mqtt is disabled")
+}
+
+func (Disabled) PublishConfig(context.Context, []byte) error {
 	return errors.New("mqtt is disabled")
 }

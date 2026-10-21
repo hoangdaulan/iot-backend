@@ -181,3 +181,45 @@ func (h *SensorHandler) WindWarnings(c *gin.Context) {
 		Month: report.Month, Threshold: report.Threshold, Total: report.Total, Days: days,
 	})
 }
+
+// WindThreshold handles GET /api/settings/wind-threshold.
+// @Summary Get the wind warning threshold
+// @Tags Settings
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} dto.WindThreshold
+// @Failure 401 {object} dto.ErrorResponse
+// @Router /settings/wind-threshold [get]
+func (h *SensorHandler) WindThreshold(c *gin.Context) {
+	threshold, err := h.sensors.WindThreshold(c.Request.Context())
+	if err != nil {
+		respondError(c, h.logger, err)
+		return
+	}
+	c.JSON(http.StatusOK, dto.WindThreshold{Threshold: threshold})
+}
+
+// SetWindThreshold handles PUT /api/settings/wind-threshold.
+// @Summary Set the wind warning threshold
+// @Description A whole number from 0 to 500 km/h. It is saved, used by the backend (warning LED state, wind report) and sent to the ESP32 over MQTT (retained).
+// @Tags Settings
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body dto.WindThresholdRequest true "Request body"
+// @Success 200 {object} dto.WindThreshold
+// @Failure 400 {object} dto.ErrorResponse
+// @Failure 401 {object} dto.ErrorResponse
+// @Router /settings/wind-threshold [put]
+func (h *SensorHandler) SetWindThreshold(c *gin.Context) {
+	var req dto.WindThresholdRequest
+	if err := bindJSON(c, &req); err != nil {
+		respondError(c, h.logger, err)
+		return
+	}
+	if err := h.sensors.SetWindThreshold(c.Request.Context(), *req.Threshold); err != nil {
+		respondError(c, h.logger, err)
+		return
+	}
+	c.JSON(http.StatusOK, dto.WindThreshold{Threshold: *req.Threshold})
+}

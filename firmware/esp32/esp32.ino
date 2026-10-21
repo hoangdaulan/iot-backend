@@ -10,7 +10,9 @@
 //
 // wind_speed is simulated: a random whole number from 0 to 500 km/h every SENSOR_INTERVAL_MS.
 // LED 3 (device 3, "LED WIND") is the wind warning light. It lights up by itself while the wind
-// speed is >= WIND_WARNING_THRESHOLD and is off otherwise; commands for it are refused.
+// speed is >= the wind threshold and is off otherwise; commands for it are refused. The threshold
+// is set in the app: the backend publishes it retained on TOPIC_CONFIG as {"windThreshold": 300}
+// and it applies at once; until it arrives the default WIND_WARNING_THRESHOLD is used.
 //
 // Libraries: PubSubClient, BH1750, DHT sensor library, ArduinoJson (v7).
 
@@ -27,6 +29,7 @@
 const char* TOPIC_SENSOR = "myiot/esp32/sensor-data";
 const char* TOPIC_CONTROL = "myiot/esp32/device-control";
 const char* TOPIC_RESPONSE = "myiot/esp32/device-response";
+const char* TOPIC_CONFIG = "myiot/esp32/config";
 
 #define DHT_PIN 22
 #define DHT_TYPE DHT11
@@ -39,7 +42,8 @@ const size_t LED_COUNT = sizeof(LED_PINS) / sizeof(LED_PINS[0]);
 // The wind warning LED is the third LED (device 3). Keep the threshold equal to the backend's.
 const long WIND_LED_DEVICE_ID = 3;
 const int WIND_MAX = 500;
-const int WIND_WARNING_THRESHOLD = 300;
+const int WIND_WARNING_THRESHOLD = 300;  // default, until the backend sends the configured one
+int windThreshold = WIND_WARNING_THRESHOLD;
 
 const unsigned long SENSOR_INTERVAL_MS = 2000;
 const unsigned long WIFI_RETRY_MS = 5000;
@@ -111,6 +115,23 @@ void handleControl(const byte* payload, unsigned int length) {
   }
 }
 
+// {"windThreshold": 300}: the wind speed from which the warning LED lights up.
+void handleConfig(const byte* payload, unsigned int length) {
+  JsonDocument doc;
+  if (deserializeJson(doc, payload, length)) {
+    Serial.println("Bad config JSON");
+    return;
+  }
+  if (doc["windThreshold"].is<int>()) {
+    int value = doc["windThreshold"].as<int>();
+    if (value >= 0 && value <= WIND_MAX) {
+      windThreshold = value;
+      Serial.print("Wind threshold = ");
+      Serial.println(windThreshold);
+    }
+  }
+}
+
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.print("MQTT <- ");
   Serial.print(topic);
@@ -120,6 +141,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   if (strcmp(topic, TOPIC_CONTROL) == 0) {
     handleControl(payload, length);
+  } else if (strcmp(topic, TOPIC_CONFIG) == 0) {
+    handleConfig(payload, length);
   }
 }
 
@@ -145,6 +168,7 @@ void ensureMqtt() {
   if (client.connect(clientId.c_str(), MQTT_USER, MQTT_PASS)) {
     Serial.println("connected");
     client.subscribe(TOPIC_CONTROL, 1);
+    client.subscribe(TOPIC_CONFIG, 1);
   } else {
     Serial.print("failed, rc=");
     Serial.println(client.state());
@@ -155,7 +179,7 @@ void ensureMqtt() {
 // Runs every interval, even while MQTT is down, so the LED never depends on the network.
 int updateWindWarning() {
   int wind = random(0, WIND_MAX + 1);  // 0 to 500 inclusive
-  bool warning = wind >= WIND_WARNING_THRESHOLD;
+  bool warning = wind >= windThreshold;
   digitalWrite(ledPin(WIND_LED_DEVICE_ID), warning ? HIGH : LOW);
   Serial.print("Wind ");
   Serial.print(wind);

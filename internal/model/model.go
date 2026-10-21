@@ -63,8 +63,8 @@ func (t SensorType) Valid() bool {
 	return t == SensorTemperature || t == SensorHumidity || t == SensorLight || t == SensorWindSpeed
 }
 
-// WindWarningThreshold is the wind speed (km/h) from which the warning LED lights up and a
-// reading counts as a warning.
+// WindWarningThreshold is the default wind speed (km/h) from which the warning LED lights up and
+// a reading counts as a warning. The threshold in use is a setting edited in the app.
 const WindWarningThreshold = 300.0
 
 // WindLEDDeviceID is the warning LED ("LED WIND"): it follows the wind speed and is never

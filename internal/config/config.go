@@ -32,6 +32,7 @@ type MQTT struct {
 	QoS            byte
 	SensorTopic    string
 	ControlTopic   string
+	ConfigTopic    string
 	ResponseTopic  string
 	CommandTimeout time.Duration
 }
@@ -59,6 +60,7 @@ func Load() (Config, error) {
 			QoS:            byte(integer("MQTT_QOS", 1, &errs)),
 			SensorTopic:    env("MQTT_TOPIC_SENSOR_DATA", "myiot/esp32/sensor-data"),
 			ControlTopic:   env("MQTT_TOPIC_DEVICE_CONTROL", "myiot/esp32/device-control"),
+			ConfigTopic:    env("MQTT_TOPIC_CONFIG", "myiot/esp32/config"),
 			ResponseTopic:  env("MQTT_TOPIC_DEVICE_RESPONSE", "myiot/esp32/device-response"),
 			CommandTimeout: duration("MQTT_COMMAND_TIMEOUT", 5*time.Second, &errs),
 		},

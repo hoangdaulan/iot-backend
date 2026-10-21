@@ -149,6 +149,17 @@ type DeviceActionHistoryItem struct {
 	Message    *string             `json:"message,omitempty"`
 }
 
+// WindThreshold is the wind speed (km/h) from which the warning LED is on and a reading counts as
+// a warning.
+type WindThreshold struct {
+	Threshold float64 `json:"threshold"`
+}
+
+// WindThresholdRequest is the body of the call that sets the threshold; the value is required.
+type WindThresholdRequest struct {
+	Threshold *float64 `json:"threshold" binding:"required"`
+}
+
 // WindWarningDay is the number of wind warnings of one day.
 type WindWarningDay struct {
 	Date  string `json:"date"`

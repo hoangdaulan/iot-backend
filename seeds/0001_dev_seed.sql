@@ -19,6 +19,7 @@ SELECT s.id,
        round(CASE s.type
                  WHEN 'temperature' THEN 26 + 5 * sin(radians(extract(hour FROM t) * 15 - 90)) + random() * 2 - 1
                  WHEN 'humidity' THEN 65 - 12 * sin(radians(extract(hour FROM t) * 15 - 90)) + random() * 4 - 2
+                 WHEN 'wind_speed' THEN random() * 500
                  ELSE greatest(0, 450 + 450 * sin(radians(extract(hour FROM t) * 15 - 90)) + random() * 40 - 20)
              END::numeric, 1)::double precision,
        t

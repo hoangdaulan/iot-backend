@@ -96,10 +96,19 @@ func TestPostgresSchemaAndSeeds(t *testing.T) {
 	if n := count(t, pool, `SELECT count(*) FROM devices WHERE id = 1 AND name = 'LED 1' AND type = 'LED' AND status = 'OFF'`); n != 1 {
 		t.Errorf("device rows = %d", n)
 	}
-	if n := count(t, pool, `SELECT count(*) FROM devices WHERE type = 'LED'`); n != 3 {
-		t.Errorf("three LED devices expected, got %d", n)
+	if n := count(t, pool, `SELECT count(*) FROM devices WHERE type = 'LED'`); n != 2 {
+		t.Errorf("two LED devices expected, got %d", n)
 	}
-	if n := count(t, pool, `SELECT count(*) FROM sensors WHERE type IN ('temperature','humidity','light')`); n != 3 {
+	if n := count(t, pool, `SELECT count(*) FROM devices WHERE id = 3 AND name = 'LED WIND' AND type = 'Warning Led'`); n != 1 {
+		t.Errorf("the warning LED (device 3) = %d rows", n)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM sensors WHERE type = 'wind_speed' AND unit = 'km/h'`); n != 1 {
+		t.Errorf("wind speed sensor = %d rows", n)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM sensor_data d JOIN sensors s ON s.id = d.sensor_id WHERE s.type = 'wind_speed' AND d.value NOT BETWEEN 0 AND 500`); n != 0 {
+		t.Errorf("%d seeded wind speeds outside 0-500", n)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM sensors WHERE type IN ('temperature','humidity','light','wind_speed')`); n != 4 {
 		t.Errorf("sensor rows = %d", n)
 	}
 	if n := count(t, pool, `SELECT count(*) FROM users`); n != 2 {
@@ -109,8 +118,8 @@ func TestPostgresSchemaAndSeeds(t *testing.T) {
 		t.Errorf("bcrypt-hashed users = %d", n)
 	}
 	// 7 days every 10 minutes, per sensor, inserted once.
-	if n := count(t, pool, `SELECT count(*) FROM sensor_data`); n != 3*1009 {
-		t.Errorf("seeded sensor_data = %d, want %d", n, 3*1009)
+	if n := count(t, pool, `SELECT count(*) FROM sensor_data`); n != 4*1009 {
+		t.Errorf("seeded sensor_data = %d, want %d", n, 4*1009)
 	}
 	if n := count(t, pool, `SELECT count(*) FROM device_actions`); n != 40 {
 		t.Errorf("seeded device_actions = %d", n)
@@ -185,7 +194,7 @@ func TestPostgresAPI(t *testing.T) {
 		}
 		from := time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)
 		_ = json.Unmarshal(h.do(http.MethodGet, "/api/sensor-data/history?startTime="+from+"&size=5000", token, nil).Body, &b)
-		if b.TotalElements < 3*12 || b.TotalElements > 3*14+2 {
+		if b.TotalElements < 4*12 || b.TotalElements > 4*14+2 {
 			t.Errorf("last 2 hours: total = %d", b.TotalElements)
 		}
 		_ = json.Unmarshal(h.do(http.MethodGet, "/api/sensor-data/history?value=999", token, nil).Body, &b)

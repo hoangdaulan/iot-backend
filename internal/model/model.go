@@ -53,13 +53,14 @@ const (
 	SensorTemperature SensorType = "temperature"
 	SensorHumidity    SensorType = "humidity"
 	SensorLight       SensorType = "light"
+	SensorWindSpeed   SensorType = "wind_speed"
 )
 
-// SensorTypes lists the three sensors in display order.
-var SensorTypes = []SensorType{SensorTemperature, SensorHumidity, SensorLight}
+// SensorTypes lists the sensors in display order.
+var SensorTypes = []SensorType{SensorTemperature, SensorHumidity, SensorLight, SensorWindSpeed}
 
 func (t SensorType) Valid() bool {
-	return t == SensorTemperature || t == SensorHumidity || t == SensorLight
+	return t == SensorTemperature || t == SensorHumidity || t == SensorLight || t == SensorWindSpeed
 }
 
 type Sensor struct {

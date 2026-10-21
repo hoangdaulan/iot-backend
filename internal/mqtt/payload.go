@@ -14,7 +14,7 @@ import (
 
 // SensorPayload is the ESP32 message on the sensor-data topic:
 //
-//	{"temperature": 28.7, "humidity": 60.5, "light": 420, "timestamp": "2026-10-05T08:00:00Z"}
+//	{"temperature": 28.7, "humidity": 60.5, "light": 420, "wind_speed": 230, "timestamp": "2026-10-05T08:00:00Z"}
 //
 // "lux" is accepted as an alias of "light". Every field is optional; "timestamp" defaults to the time the message is received.
 type SensorPayload struct {
@@ -29,6 +29,7 @@ var sensorRanges = map[model.SensorType][2]float64{
 	model.SensorTemperature: {-40, 125},
 	model.SensorHumidity:    {0, 100},
 	model.SensorLight:       {0, 65535},
+	model.SensorWindSpeed:   {0, 500}, // km/h, simulated by the firmware
 }
 
 // ParseSensorPayload decodes and validates a sensor-data message. It fails if the message is not
@@ -39,6 +40,7 @@ func ParseSensorPayload(raw []byte) (SensorPayload, error) {
 		Humidity    *float64 `json:"humidity"`
 		Light       *float64 `json:"light"`
 		Lux         *float64 `json:"lux"`
+		WindSpeed   *float64 `json:"wind_speed"`
 		Timestamp   *string  `json:"timestamp"`
 	}
 	if err := json.Unmarshal(bytes.TrimSpace(raw), &msg); err != nil {
@@ -54,6 +56,7 @@ func ParseSensorPayload(raw []byte) (SensorPayload, error) {
 		model.SensorTemperature: msg.Temperature,
 		model.SensorHumidity:    msg.Humidity,
 		model.SensorLight:       msg.Light,
+		model.SensorWindSpeed:   msg.WindSpeed,
 	} {
 		if value == nil {
 			continue

@@ -418,7 +418,8 @@ func TestSensorsList(t *testing.T) {
 	expect(t, res, http.StatusOK, "")
 	var sensors []map[string]any
 	_ = json.Unmarshal(res.Body, &sensors)
-	if len(sensors) != 3 || sensors[0]["type"] != "temperature" || sensors[1]["unit"] != "%" || sensors[2]["type"] != "light" {
+	if len(sensors) != 4 || sensors[0]["type"] != "temperature" || sensors[1]["unit"] != "%" || sensors[2]["type"] != "light" ||
+		sensors[3]["type"] != "wind_speed" || sensors[3]["unit"] != "km/h" {
 		t.Errorf("sensors = %s", res.Body)
 	}
 }
@@ -436,7 +437,7 @@ func TestSensorLatest(t *testing.T) {
 
 	res := h.do(http.MethodGet, "/api/sensor-data/latest", token, nil)
 	expect(t, res, http.StatusOK, "")
-	if string(res.Body) != `{"data":{},"deviceStatus":"OFF","devices":[{"id":1,"name":"LED 1","type":"LED","status":"OFF"},{"id":2,"name":"LED 2","type":"LED","status":"OFF"},{"id":3,"name":"LED 3","type":"LED","status":"OFF"}]}` {
+	if string(res.Body) != `{"data":{},"deviceStatus":"OFF","devices":[{"id":1,"name":"LED 1","type":"LED","status":"OFF"},{"id":2,"name":"LED 2","type":"LED","status":"OFF"},{"id":3,"name":"LED WIND","type":"Warning Led","status":"OFF"}]}` {
 		t.Errorf("empty latest = %s", res.Body)
 	}
 
@@ -705,7 +706,7 @@ func TestDeviceList(t *testing.T) {
 
 	res := h.do(http.MethodGet, "/api/devices", token, nil)
 	expect(t, res, http.StatusOK, "")
-	want := `[{"id":1,"name":"LED 1","type":"LED","status":"OFF"},{"id":2,"name":"LED 2","type":"LED","status":"OFF"},{"id":3,"name":"LED 3","type":"LED","status":"OFF"}]`
+	want := `[{"id":1,"name":"LED 1","type":"LED","status":"OFF"},{"id":2,"name":"LED 2","type":"LED","status":"OFF"},{"id":3,"name":"LED WIND","type":"Warning Led","status":"OFF"}]`
 	if string(res.Body) != want {
 		t.Errorf("body = %s", res.Body)
 	}
@@ -911,4 +912,53 @@ func TestSensorHistoryUsesVietnamTime(t *testing.T) {
 			t.Errorf("%s: total = %d, want %d (%s)", query, got, want, res.Body)
 		}
 	}
+}
+
+func TestWindSpeedSensor(t *testing.T) {
+	h := newHarness(t)
+	token := h.login("admin")
+	base := time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)
+	h.ingest(base, map[model.SensorType]float64{"temperature": 25, "wind_speed": 320})
+	h.ingest(base.Add(time.Minute), map[model.SensorType]float64{"wind_speed": 120})
+
+	t.Run("latest includes the newest wind speed", func(t *testing.T) {
+		res := h.do(http.MethodGet, "/api/sensor-data/latest", token, nil)
+		expect(t, res, http.StatusOK, "")
+		var body struct {
+			Data map[string]struct {
+				Value float64
+				Unit  string
+			}
+		}
+		_ = json.Unmarshal(res.Body, &body)
+		if w := body.Data["wind_speed"]; w.Value != 120 || w.Unit != "km/h" {
+			t.Errorf("latest = %s", res.Body)
+		}
+	})
+	t.Run("history filters by wind_speed and always lists the type", func(t *testing.T) {
+		var body struct {
+			Data          map[string][]struct{ Value float64 }
+			TotalElements int64
+		}
+		res := h.do(http.MethodGet, "/api/sensor-data/history?type=wind_speed", token, nil)
+		expect(t, res, http.StatusOK, "")
+		_ = json.Unmarshal(res.Body, &body)
+		if body.TotalElements != 2 || len(body.Data["wind_speed"]) != 2 || body.Data["wind_speed"][0].Value != 120 || len(body.Data["temperature"]) != 0 {
+			t.Errorf("history = %s", res.Body)
+		}
+		res = h.do(http.MethodGet, "/api/sensor-data/history?filter=wind_speed&q=320", token, nil)
+		expect(t, res, http.StatusOK, "")
+		_ = json.Unmarshal(res.Body, &body)
+		if body.TotalElements != 1 || body.Data["wind_speed"][0].Value != 320 {
+			t.Errorf("value search = %s", res.Body)
+		}
+		res = h.do(http.MethodGet, "/api/sensor-data/history", token, nil)
+		if _, ok := res.json(t)["data"].(map[string]any)["wind_speed"]; !ok {
+			t.Errorf("wind_speed key missing: %s", res.Body)
+		}
+	})
+	t.Run("an unknown type is rejected", func(t *testing.T) {
+		expect(t, h.do(http.MethodGet, "/api/sensor-data/history?type=co2", token, nil), http.StatusBadRequest,
+			"Invalid query parameters: type must be temperature, humidity, light or wind_speed")
+	})
 }

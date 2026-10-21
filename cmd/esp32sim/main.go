@@ -86,6 +86,7 @@ func publishReading(c mqtt.Client, topic string, logger *slog.Logger) {
 		"temperature": round(27 + 4*math.Sin(phase) + rand.NormFloat64()*0.2),
 		"humidity":    round(math.Min(100, math.Max(0, 60+10*math.Cos(phase)+rand.NormFloat64()*0.5))),
 		"light":       math.Max(0, math.Round(400+300*math.Sin(phase/2)+rand.NormFloat64()*10)),
+		"wind_speed":  float64(rand.IntN(501)), // 0 to 500 km/h, like the firmware
 		"timestamp":   time.Now().UTC().Format(time.RFC3339),
 	}
 	payload, _ := json.Marshal(msg)

@@ -83,7 +83,7 @@ func (h *SensorHandler) Latest(c *gin.Context) {
 // @Param endTime query string false "End of the time range, same format as startTime; empty means no upper bound"
 // @Param value query number false "Exact value filter"
 // @Param bucket query string false "Take the maximum of each sensor over windows of this length, e.g. 5m (whole minutes, 1m to 24h); each entry is then a window, stamped with its start"
-// @Param filter query string false "What q searches: all (any of sensor, value or time), sensor (id or name), temperature, humidity, light (value starting with q, e.g. 28 = 28.0-28.99) or time (yyyy/MM/dd HH:mm:ss prefix)"
+// @Param filter query string false "What q searches: all (any of sensor, value or time), sensor (id or name), temperature, humidity, light, wind_speed (value starting with q, e.g. 28 = 28.0-28.99) or time (yyyy/MM/dd HH:mm:ss prefix)"
 // @Param q query string false "Search text for filter; empty means no search"
 // @Param page query int false "0-based page"
 // @Param size query int false "Page size"

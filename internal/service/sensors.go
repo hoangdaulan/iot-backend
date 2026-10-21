@@ -56,7 +56,7 @@ const (
 	FilterAll    = "all"
 	FilterSensor = "sensor"
 	FilterTime   = "time"
-	// A sensor type name (temperature, humidity, light) filters by type and searches the value.
+	// A sensor type name (temperature, humidity, light, wind_speed) filters by type and searches the value.
 )
 
 type HistoryQuery struct {
@@ -96,7 +96,7 @@ func (s *SensorService) History(ctx context.Context, q HistoryQuery) ([]model.Se
 		return nil, 0, err
 	}
 	if q.Type != nil && !q.Type.Valid() {
-		return nil, 0, apperr.BadRequest("Invalid query parameters: type must be temperature, humidity or light")
+		return nil, 0, apperr.BadRequest("Invalid query parameters: type must be temperature, humidity, light or wind_speed")
 	}
 	filter := repository.SensorHistoryFilter{
 		Type: q.Type, From: q.From, To: q.To, Value: q.Value, Bucket: q.Bucket,
@@ -139,7 +139,7 @@ func (q *HistoryQuery) applySearch(f *repository.SensorHistoryFilter) error {
 
 	t := model.SensorType(q.Filter)
 	if !t.Valid() {
-		return apperr.BadRequest("Invalid query parameters: filter must be all, sensor, temperature, humidity, light or time")
+		return apperr.BadRequest("Invalid query parameters: filter must be all, sensor, temperature, humidity, light, wind_speed or time")
 	}
 	f.Type = &t
 	if query == "" {

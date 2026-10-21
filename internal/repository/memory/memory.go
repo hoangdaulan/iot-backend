@@ -25,20 +25,21 @@ type Store struct {
 	clockFunc func() time.Time
 }
 
-// NewStore returns a store seeded like the initial migration: devices 1-3 (LED 1-3, OFF) and the
-// three sensors.
+// NewStore returns a store seeded like the initial migration: devices 1-3 (LED 1, LED 2, LED WIND; OFF) and
+// the four sensors.
 func NewStore() *Store {
 	now := time.Now().UTC()
 	return &Store{
 		devices: map[int64]*model.Device{
 			1: {ID: 1, Name: "LED 1", Type: "LED", Status: model.DeviceOff, CreatedAt: now, UpdatedAt: now},
 			2: {ID: 2, Name: "LED 2", Type: "LED", Status: model.DeviceOff, CreatedAt: now, UpdatedAt: now},
-			3: {ID: 3, Name: "LED 3", Type: "LED", Status: model.DeviceOff, CreatedAt: now, UpdatedAt: now},
+			3: {ID: 3, Name: "LED WIND", Type: "Warning Led", Status: model.DeviceOff, CreatedAt: now, UpdatedAt: now},
 		},
 		sensors: []model.Sensor{
 			{ID: 1, Name: "Temperature", Type: model.SensorTemperature, Unit: "°C", CreatedAt: now, UpdatedAt: now},
 			{ID: 2, Name: "Humidity", Type: model.SensorHumidity, Unit: "%", CreatedAt: now, UpdatedAt: now},
 			{ID: 3, Name: "Light", Type: model.SensorLight, Unit: "lux", CreatedAt: now, UpdatedAt: now},
+			{ID: 4, Name: "Wind Speed", Type: model.SensorWindSpeed, Unit: "km/h", CreatedAt: now, UpdatedAt: now},
 		},
 		nextIDs:   map[string]int64{},
 		clockFunc: func() time.Time { return time.Now().UTC() },

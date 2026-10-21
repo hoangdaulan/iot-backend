@@ -37,6 +37,26 @@ func TestParseSensorPayload(t *testing.T) {
 		}
 	})
 
+	t.Run("wind speed from 0 to 500 km/h", func(t *testing.T) {
+		p, err := ParseSensorPayload([]byte(`{"temperature":27.3,"wind_speed":500}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.Values["wind_speed"] != 500 || len(p.Values) != 2 || len(p.Rejected) != 0 {
+			t.Errorf("values = %v, rejected = %v", p.Values, p.Rejected)
+		}
+		p, err = ParseSensorPayload([]byte(`{"temperature":27.3,"wind_speed":501}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := p.Values["wind_speed"]; ok || len(p.Rejected) != 1 {
+			t.Errorf("values = %v, rejected = %v", p.Values, p.Rejected)
+		}
+		if _, err := ParseSensorPayload([]byte(`{"wind_speed":-1}`)); err == nil {
+			t.Error("a payload with only an invalid value must fail")
+		}
+	})
+
 	t.Run("partial payload with timestamp", func(t *testing.T) {
 		p, err := ParseSensorPayload([]byte(`{"light": 0, "timestamp": "2026-10-05T08:00:00+07:00"}`))
 		if err != nil {

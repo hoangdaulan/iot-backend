@@ -1,12 +1,16 @@
 // ESP32 firmware for the MyIoT backend.
 //
-// Publishes {"temperature":27.3,"humidity":55.0,"lux":2.5} to TOPIC_SENSOR (fields whose sensor
-// failed are left out) and executes LED commands from TOPIC_CONTROL:
+// Publishes {"temperature":27.3,"humidity":55.0,"lux":2.5,"wind_speed":342} to TOPIC_SENSOR
+// (fields whose sensor failed are left out) and executes LED commands from TOPIC_CONTROL:
 //
 //   backend -> ESP32   {"actionId": 42, "deviceId": 2, "command": "ON"}   ("ON" or "OFF")
 //   ESP32 -> backend   {"actionId": 42, "status": "SUCCESS", "state": "ON", "message": "LED 2 on"}
 //
 // deviceId N (1..LED_COUNT) is the backend's "LED N" device and drives LED_PINS[N - 1].
+//
+// wind_speed is simulated: a random whole number from 0 to 500 km/h every SENSOR_INTERVAL_MS.
+// LED 3 (device 3, "LED WIND") is the wind warning light. It lights up by itself while the wind
+// speed is >= WIND_WARNING_THRESHOLD and is off otherwise; commands for it are refused.
 //
 // Libraries: PubSubClient, BH1750, DHT sensor library, ArduinoJson (v7).
 
@@ -31,6 +35,11 @@ const char* TOPIC_RESPONSE = "myiot/esp32/device-response";
 
 const uint8_t LED_PINS[] = {23, 21, 16};
 const size_t LED_COUNT = sizeof(LED_PINS) / sizeof(LED_PINS[0]);
+
+// The wind warning LED is the third LED (device 3). Keep the threshold equal to the backend's.
+const long WIND_LED_DEVICE_ID = 3;
+const int WIND_MAX = 500;
+const int WIND_WARNING_THRESHOLD = 300;
 
 const unsigned long SENSOR_INTERVAL_MS = 2000;
 const unsigned long WIFI_RETRY_MS = 5000;
@@ -142,7 +151,19 @@ void ensureMqtt() {
   }
 }
 
-void publishSensorData() {
+// Draws the simulated wind speed and lights the warning LED when it reaches the threshold.
+// Runs every interval, even while MQTT is down, so the LED never depends on the network.
+int updateWindWarning() {
+  int wind = random(0, WIND_MAX + 1);  // 0 to 500 inclusive
+  bool warning = wind >= WIND_WARNING_THRESHOLD;
+  digitalWrite(ledPin(WIND_LED_DEVICE_ID), warning ? HIGH : LOW);
+  Serial.print("Wind ");
+  Serial.print(wind);
+  Serial.println(warning ? " km/h -> WARNING (LED WIND on)" : " km/h");
+  return wind;
+}
+
+void publishSensorData(int wind) {
   float temperature = dht.readTemperature();
   float humidity = dht.readHumidity();
   float lux = bh1750Ready ? lightMeter.readLightLevel() : NAN;
@@ -152,6 +173,7 @@ void publishSensorData() {
   if (!isnan(temperature)) doc["temperature"] = serialized(String(temperature, 1));
   if (!isnan(humidity)) doc["humidity"] = serialized(String(humidity, 1));
   if (!isnan(lux) && lux >= 0) doc["lux"] = serialized(String(lux, 1));
+  doc["wind_speed"] = wind;
 
   if (doc.size() == 0) {
     Serial.println("No sensor could be read");
@@ -195,8 +217,9 @@ void loop() {
   client.loop();
 
   unsigned long now = millis();
-  if (client.connected() && now - lastSensorTime >= SENSOR_INTERVAL_MS) {
+  if (now - lastSensorTime >= SENSOR_INTERVAL_MS) {
     lastSensorTime = now;
-    publishSensorData();
+    int wind = updateWindWarning();
+    if (client.connected()) publishSensorData(wind);
   }
 }

@@ -1200,3 +1200,33 @@ func TestWindThreshold(t *testing.T) {
 		expect(t, h.do(http.MethodPut, "/api/settings/wind-threshold", "", `{"threshold":100}`), http.StatusUnauthorized, "")
 	})
 }
+
+// A browser (Swagger UI, Flutter Web) sends a preflight before any method other than GET/POST
+// without a body, and blocks the call if the method is not allowed: every method the API uses
+// must be in Access-Control-Allow-Methods.
+func TestCORSAllowsEveryMethodOfTheAPI(t *testing.T) {
+	h := newHarness(t)
+	engine := h.handler.(*gin.Engine)
+	methods := map[string]bool{}
+	for _, route := range engine.Routes() {
+		methods[route.Method] = true
+	}
+	if !methods[http.MethodPut] {
+		t.Fatal("expected a PUT route (wind threshold)")
+	}
+	for method := range methods {
+		if method == http.MethodHead { // a CORS-safelisted method: no preflight is needed
+			continue
+		}
+		req := httptest.NewRequest(http.MethodOptions, "/api/settings/wind-threshold", nil)
+		req.Header.Set("Origin", "http://100.93.53.111:8080")
+		req.Header.Set("Access-Control-Request-Method", method)
+		req.Header.Set("Access-Control-Request-Headers", "authorization,content-type")
+		w := httptest.NewRecorder()
+		h.handler.ServeHTTP(w, req)
+		allowed := w.Header().Get("Access-Control-Allow-Methods")
+		if w.Code != http.StatusNoContent || !strings.Contains(allowed, method) {
+			t.Errorf("%s is not allowed by CORS: %d %q", method, w.Code, allowed)
+		}
+	}
+}
